@@ -4,15 +4,21 @@ Sistema web para la gestión de inventario y solicitudes de equipos del Ambiente
 
 ## Arquitectura
 
-El sistema utiliza una arquitectura monolítica en capas basada en el patrón MVC,
-con frontend desacoplado y backend expuesto mediante una API REST.  
+El sistema utiliza una **arquitectura n-capas**, separando las responsabilidades en capas independientes que se comunican de forma unidireccional:
+
+| Capa | Descripción |
+|------|-------------|
+| **Presentación** | Interfaz de usuario (React), consume la API REST |
+| **Aplicación** | Controladores y rutas HTTP (Express), orquesta los casos de uso |
+| **Negocio** | Lógica de negocio, reglas de validación, gestión de estados y roles |
+| **Acceso a datos** | Repositorios y modelos, abstracción sobre la base de datos |
+| **Infraestructura** | Base de datos, servicios externos, almacenamiento |
+
 Incluye control de acceso por roles, gestión de estados y auditoría completa.
 
 📎 La arquitectura detallada se encuentra en: **/docs/arquitectura.md**
 
 ## Estructura del Proyecto
-
-El repositorio se organiza de la siguiente manera:
 
 ```text
 /
@@ -23,11 +29,19 @@ El repositorio se organiza de la siguiente manera:
 │   ├── marco-teorico.md
 │   └── arquitectura.md
 ├── /frontend
-│   └── Código fuente del frontend
+│   └── /src
+│       ├── /components        # Capa de Presentación — componentes UI
+│       ├── /pages             # Capa de Presentación — vistas por ruta
+│       └── /services          # Cliente HTTP hacia la API
 └── /backend
-    └── Código fuente del backend
+    └── /src
+        ├── /routes            # Capa de Aplicación — definición de endpoints
+        ├── /controllers       # Capa de Aplicación — manejo de peticiones HTTP
+        ├── /services          # Capa de Negocio — lógica y reglas del dominio
+        ├── /repositories      # Capa de Acceso a Datos — consultas y persistencia
+        ├── /models            # Capa de Acceso a Datos — esquemas y entidades
+        └── /config            # Capa de Infraestructura — BD, variables de entorno
 ```
-
 
 ## 🛠️ Stack Tecnológico
  
@@ -38,7 +52,7 @@ El repositorio se organiza de la siguiente manera:
 ### Backend
 - **[Node.js](https://nodejs.org)** `version` — Runtime
 - **[Express](https://expressjs.com)** `version` — API REST
-- **[](https://)** `version` — Base de datos
+- **[MySQL](https://)** `version` — Base de datos
 
 ### DevOps / Infraestructura
 - **Docker** — Contenerización
@@ -98,9 +112,8 @@ npm run test:coverage
 ```
  
 El reporte de cobertura se genera en `/coverage/index.html`
- 
+>[!NOTE]
 > Umbral mínimo requerido: **80%** de cobertura
- 
 ---
  
 ## 📖 Documentación
@@ -122,9 +135,8 @@ La documentación completa del proyecto está disponible en la carpeta **`/docs`
  
 
 ## 🤝 Contribución
-Este proyecto es de uso **interno**. Por el momento solo los miembros del equipo
-pueden contribuir. Si formas parte del equipo, contacta a alguno de los
-[autores](#-autores) para obtener acceso al repositorio.
+Para conocer el flujo de trabajo, convenciones de ramas, estándares de código y proceso
+de revisión, consulta el archivo **[CONTRIBUTING.md](./CONTRIBUTING.md)**.
 
 ---
  
