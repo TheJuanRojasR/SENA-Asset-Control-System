@@ -14,6 +14,8 @@ El sistema utiliza una **arquitectura n-capas**, separando las responsabilidades
 | **Acceso a datos** | Repositorios y modelos, abstracción sobre la base de datos |
 | **Infraestructura** | Base de datos, servicios externos, almacenamiento |
 
+El backend usa un modelo de módulos en `backend/src/modules`, donde cada módulo agrupa rutas, controladores, validadores, servicios y acceso a datos relacionados con un dominio específico.
+
 Incluye control de acceso por roles, gestión de estados y auditoría completa.
 
 📎 La arquitectura detallada se encuentra en: **/docs/arquitectura.md**
@@ -29,18 +31,21 @@ Incluye control de acceso por roles, gestión de estados y auditoría completa.
 │   ├── marco-teorico.md
 │   └── arquitectura.md
 ├── /frontend
-│   └── /src
-│       ├── /components        # Capa de Presentación — componentes UI
-│       ├── /pages             # Capa de Presentación — vistas por ruta
-│       └── /services          # Cliente HTTP hacia la API
+│   └── ...                  # Cliente React, vistas y recursos estáticos
 └── /backend
+    ├── app.js
+    ├── server.js
+    ├── package.json
+    ├── prisma.config.ts
+    ├── /prisma
+    │   └── schema.prisma
     └── /src
-        ├── /routes            # Capa de Aplicación — definición de endpoints
-        ├── /controllers       # Capa de Aplicación — manejo de peticiones HTTP
-        ├── /services          # Capa de Negocio — lógica y reglas del dominio
-        ├── /repositories      # Capa de Acceso a Datos — consultas y persistencia
-        ├── /models            # Capa de Acceso a Datos — esquemas y entidades
-        └── /config            # Capa de Infraestructura — BD, variables de entorno
+        ├── /modules          # Módulos del dominio: rutas, controladores, servicios y repositorios
+        ├── /config           # Configuración de BD, entorno y servicios externos
+        ├── /middlewares      # Seguridad (JWT), Roles y Errores
+        ├── /utils            # Funciones auxiliares y constantes
+        └── /scripts          # Tareas y scripts de soporte
+```
 ```
 
 ## 🛠️ Stack Tecnológico
