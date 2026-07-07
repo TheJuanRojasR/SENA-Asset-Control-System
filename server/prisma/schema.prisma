@@ -1,0 +1,310 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  INSTRUCTOR
+}
+
+enum Shift {
+  MORNING
+  AFTERNOON
+  NIGHT
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PACKED
+  DELIVERED
+  PARTIALLY_RETURNED
+  COMPLETED
+  CANCELLED
+}
+
+enum UnitStatus {
+  AVAILABLE
+  RESERVED
+  LOANED
+  MAINTENANCE
+  DISPOSED
+}
+
+enum PhysicalState {
+  GOOD
+  REGULAR
+  DAMAGED
+  DISPOSED
+}
+
+enum MovementType {
+  LOAN
+  RETURN
+  RESTOCK
+  ADJUSTMENT
+  DISPOSAL
+}
+
+enum NotificationType {
+  REQUEST_APPROVED
+  REQUEST_REJECTED
+  STOCK_LOW
+  RETURN_REMINDER
+  SYSTEM
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @db.VarChar(255)
+  passwordHash  String    @db.VarChar(255)
+  fullName      String    @db.VarChar(255)
+  role          Role
+  shift         Shift?
+  phone         String?   @db.VarChar(50)
+  document      String?   @db.VarChar(100)
+  imageUrl      String?   @db.VarChar(500)
+  isActive      Boolean   @default(true)
+  isDeleted     Boolean   @default(false)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  requestsMade   Request[]     @relation("RequestRequester")
+  requestsApproved Request[]   @relation("RequestApprovedBy")
+  requestsRejected Request[]   @relation("RequestRejectedBy")
+  requestsPacked   Request[]   @relation("RequestPackedBy")
+  requestsDelivered Request[]  @relation("RequestDeliveredBy")
+  movements      Movement[]    @relation("MovementResponsible")
+  returnedUnits  RequestItemUnit[] @relation("ReturnedByUser")
+  notifications  Notification[]
+
+  @@unique([email, isDeleted])
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+model Environment {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  location    String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests     Request[]
+  inventoryUnits InventoryUnit[]
+
+  @@map("environments")
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(255)
+  description String?  @db.Text
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items Item[]
+
+  @@map("categories")
+}
+
+model Item {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique @db.VarChar(100)
+  name         String   @db.VarChar(255)
+  description  String?  @db.Text
+  imageUrl     String?  @db.VarChar(500)
+  categoryId   Int
+  minStock     Int      @default(0)
+  unit         String   @default("UNIDAD") @db.VarChar(50)
+  isConsumable Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  category       Category        @relation(fields: [categoryId], references: [id])
+  inventoryUnits InventoryUnit[]
+  requestItems   RequestItem[]
+  movements      Movement[]
+  components     ItemComponent[] @relation("ItemComponentParent")
+  usedInComponents ItemComponent[] @relation("ItemComponentChild")
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@map("items")
+}
+
+model InventoryUnit {
+  id            Int           @id @default(autoincrement())
+  itemId        Int
+  serialNumber  String        @unique @db.VarChar(255)
+  environmentId Int?
+  parentUnitId  Int?
+  status        UnitStatus    @default(AVAILABLE)
+  physicalState PhysicalState @default(GOOD)
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  item        Item        @relation(fields: [itemId], references: [id])
+  environment Environment? @relation(fields: [environmentId], references: [id])
+  parentUnit  InventoryUnit? @relation("UnitAssembly", fields: [parentUnitId], references: [id])
+  childUnits  InventoryUnit[] @relation("UnitAssembly")
+  movements   Movement[]
+  requestItemUnits RequestItemUnit[]
+
+  @@index([itemId])
+  @@index([status])
+  @@index([environmentId])
+  @@index([parentUnitId])
+  @@map("inventory_units")
+}
+
+model ItemComponent {
+  id           Int      @id @default(autoincrement())
+  parentItemId Int
+  childItemId  Int
+  quantity     Int      @default(1)
+  isRequired   Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  parentItem Item @relation("ItemComponentParent", fields: [parentItemId], references: [id], onDelete: Cascade)
+  childItem  Item @relation("ItemComponentChild", fields: [childItemId], references: [id], onDelete: Cascade)
+
+  @@unique([parentItemId, childItemId])
+  @@index([parentItemId])
+  @@index([childItemId])
+  @@map("item_components")
+}
+
+model Request {
+  id              Int           @id @default(autoincrement())
+  code            String        @unique @db.VarChar(50)
+  requesterId     Int
+  environmentId   Int?
+  shift           String?       @db.VarChar(50)
+  status          RequestStatus @default(PENDING)
+  requestDate     DateTime      @default(now())
+  estimatedDate   DateTime?
+  observations    String?       @db.Text
+  approvedById    Int?
+  approvedAt      DateTime?
+  rejectionReason String?       @db.Text
+  rejectedById    Int?
+  rejectedAt      DateTime?
+  packedById      Int?
+  packedAt        DateTime?
+  deliveredById   Int?
+  deliveredAt     DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  requester     User          @relation("RequestRequester", fields: [requesterId], references: [id])
+  approvedBy    User?         @relation("RequestApprovedBy", fields: [approvedById], references: [id])
+  rejectedBy    User?         @relation("RequestRejectedBy", fields: [rejectedById], references: [id])
+  packedBy      User?         @relation("RequestPackedBy", fields: [packedById], references: [id])
+  deliveredBy   User?         @relation("RequestDeliveredBy", fields: [deliveredById], references: [id])
+  environment   Environment?  @relation(fields: [environmentId], references: [id])
+  requestItems  RequestItem[]
+  movements     Movement[]
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([requestDate])
+  @@map("requests")
+}
+
+model RequestItem {
+  id                    Int               @id @default(autoincrement())
+  requestId             Int
+  itemId                Int
+  requestedQty          Int
+  approvedQty           Int?
+  deliveredQty          Int               @default(0)
+  returnedQty           Int               @default(0)
+  physicalStateApproved PhysicalState     @default(GOOD)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  request          Request           @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item             Item              @relation(fields: [itemId], references: [id])
+  assignedUnits    RequestItemUnit[]
+
+  @@index([requestId])
+  @@index([itemId])
+  @@map("request_items")
+}
+
+model RequestItemUnit {
+  id                    Int             @id @default(autoincrement())
+  requestItemId         Int
+  inventoryUnitId       Int             @unique
+  loanedAt              DateTime?
+  returnedAt            DateTime?
+  returnedById          Int?
+  physicalStateReturned PhysicalState?
+  createdAt             DateTime        @default(now())
+
+  requestItem      RequestItem    @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  inventoryUnit    InventoryUnit  @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
+  returnedBy       User?          @relation("ReturnedByUser", fields: [returnedById], references: [id])
+
+  @@index([requestItemId])
+  @@index([inventoryUnitId])
+  @@index([returnedById])
+  @@map("request_item_units")
+}
+
+model Movement {
+  id              Int          @id @default(autoincrement())
+  type            MovementType
+  itemId          Int?
+  inventoryUnitId Int?
+  quantity        Int          @default(0)
+  responsibleId   Int?
+  requestId       Int?
+  notes           String?      @db.Text
+  createdAt       DateTime     @default(now())
+
+  item          Item?           @relation(fields: [itemId], references: [id])
+  inventoryUnit InventoryUnit?  @relation(fields: [inventoryUnitId], references: [id])
+  responsible   User?           @relation("MovementResponsible", fields: [responsibleId], references: [id])
+  request       Request?        @relation(fields: [requestId], references: [id])
+
+  @@index([itemId])
+  @@index([inventoryUnitId])
+  @@index([requestId])
+  @@index([createdAt])
+  @@map("movements")
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  type      NotificationType @default(SYSTEM)
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}

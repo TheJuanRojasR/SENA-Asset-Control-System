@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE `items` ADD COLUMN `imageUrl` VARCHAR(500) NULL;
+
+-- AlterTable
+ALTER TABLE `users` ADD COLUMN `imageUrl` VARCHAR(500) NULL,
+    ADD COLUMN `shift` ENUM('MORNING', 'AFTERNOON', 'NIGHT') NULL;
