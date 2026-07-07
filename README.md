@@ -1,153 +1,197 @@
 # SENA Asset Control System
-Sistema web para la gestión de inventario y solicitudes de equipos del Ambiente 104 del SENA Quiriguá, con trazabilidad, control por roles y automatización de procesos.
 
+Sistema web para la gestión de inventario y solicitudes de equipos del **Ambiente 104 del SENA Quirigüá**, con trazabilidad por serial, control por roles (ADMIN / INSTRUCTOR), préstamos/devoluciones reales e ítems compuestos.
 
 ## Arquitectura
 
-El sistema utiliza una **arquitectura n-capas**, separando las responsabilidades en capas independientes que se comunican de forma unidireccional:
+El proyecto usa una arquitectura de **monorepo ligero** separado en cliente, servidor e infraestructura:
 
-| Capa | Descripción |
-|------|-------------|
-| **Presentación** | Interfaz de usuario (React), consume la API REST |
-| **Aplicación** | Controladores y rutas HTTP (Express), orquesta los casos de uso |
-| **Negocio** | Lógica de negocio, reglas de validación, gestión de estados y roles |
-| **Acceso a datos** | Repositorios y modelos, abstracción sobre la base de datos |
-| **Infraestructura** | Base de datos, servicios externos, almacenamiento |
+| Capa | Tecnología | Ubicación |
+|------|------------|-----------|
+| **Frontend** | React 18 + Vite + Material-UI 5 + TailwindCSS | `client/` |
+| **Backend** | Node.js 20 + Express + Prisma ORM + MySQL 8 | `server/` |
+| **Infraestructura** | Docker Compose | `docker-compose.yml` |
 
-El backend usa un modelo de módulos en `backend/src/modules`, donde cada módulo agrupa rutas, controladores, validadores, servicios y acceso a datos relacionados con un dominio específico.
+El backend está organizado por dominios: rutas, controladores, servicios, repositorios, validaciones con Zod y middlewares de autenticación/roles.
 
-Incluye control de acceso por roles, gestión de estados y auditoría completa.
+Incluye control de acceso por roles, gestión de estados de solicitudes, auditoría de movimientos (`LOAN`, `RETURN`) y documentación Swagger.
 
-📎 La arquitectura detallada se encuentra en: **/docs/arquitectura.md**
+📎 La bitácora de construcción se encuentra en: **[/docs/PROCESO.md](./docs/PROCESO.md)**.
 
 ## Estructura del Proyecto
 
 ```text
 /
+├── client/                 # React SPA
+│   ├── src/
+│   │   ├── api/            # Clientes axios por dominio
+│   │   ├── components/     # Componentes reutilizables
+│   │   ├── pages/          # Páginas por rol
+│   │   ├── stores/         # Zustand stores
+│   │   ├── constants/      # Colores SENA, estados, roles
+│   │   └── utils/          # Helpers de API
+│   └── tests/              # Tests con Vitest + Testing Library
+├── server/                 # Express API
+│   ├── src/
+│   │   ├── config/         # Variables de entorno
+│   │   ├── controllers/    # Controladores HTTP
+│   │   ├── middlewares/    # Auth, roles, errores
+│   │   ├── routes/         # Rutas de la API
+│   │   ├── services/       # Lógica de negocio
+│   │   ├── repositories/   # Acceso a datos con Prisma
+│   │   ├── validations/    # Esquemas Zod
+│   │   └── utils/          # Helpers
+│   ├── prisma/
+│   │   ├── schema.prisma   # Modelo de datos
+│   │   ├── migrations/     # Migraciones SQL
+│   │   └── seeders/        # Seed de datos de prueba
+│   └── tests/              # Tests de integración con Jest
+├── docs/
+│   ├── PROCESO.md          # Bitácora de construcción
+│   └── Mockup_Sena_Inventario.pdf
+├── .ai/                    # Orquestador de agentes
+├── docker-compose.yml
+├── Makefile
 ├── README.md
-├── CONTRIBUTING.md
-├── LICENSE
-├── /docs
-│   ├── marco-teorico.md
-│   └── arquitectura.md
-├── /frontend
-│   └── ...                  # Cliente React, vistas y recursos estáticos
-└── /backend
-    ├── app.js
-    ├── server.js
-    ├── package.json
-    ├── prisma.config.ts
-    ├── /prisma
-    │   └── schema.prisma
-    └── /src
-        ├── /modules          # Módulos del dominio: rutas, controladores, servicios y repositorios
-        ├── /config           # Configuración de BD, entorno y servicios externos
-        ├── /middlewares      # Seguridad (JWT), Roles y Errores
-        ├── /utils            # Funciones auxiliares y constantes
-        └── /scripts          # Tareas y scripts de soporte
-```
+└── CONTRIBUTING.md
 ```
 
 ## 🛠️ Stack Tecnológico
- 
+
 ### Frontend
-- **[React](https://react.dev)** `version` — Framework UI
-- **[JavaScript](https://)** `version` — Tipado estático
+- **React 18** — Framework UI
+- **Vite** — Build tool
+- **Material-UI 5** — Componentes
+- **TailwindCSS** — Utilidades de estilo
+- **Framer Motion** — Animaciones
+- **React Query** — Manejo de datos asíncronos
+- **Zustand** — Estado global
+- **React Hook Form + Zod** — Formularios y validación
 
 ### Backend
-- **[Node.js](https://nodejs.org)** `version` — Runtime
-- **[Express](https://expressjs.com)** `version` — API REST
-- **[MySQL](https://)** `version` — Base de datos
+- **Node.js 20** — Runtime
+- **Express** — API REST
+- **Prisma ORM** — Acceso a datos y migraciones
+- **MySQL 8** — Base de datos
+- **JWT** — Autenticación
+- **Socket.io** — Preparado para notificaciones en tiempo real
+- **Swagger** — Documentación de API
 
 ### DevOps / Infraestructura
-- **Docker** — Contenerización
-- **GitHub Actions** — CI/CD
-- **AWS / GCP / Azure** — Cloud hosting
+- **Docker Compose** — Entorno de desarrollo
+- **ESLint + Prettier + Husky** — Calidad de código
+- **Jest + Vitest + Testing Library** — Tests
+
 ---
- 
+
 ## ⚙️ Prerrequisitos
- 
-Asegúrate de tener instalado:
- 
-- [Node.js](https://nodejs.org) `version`
-- [Docker](https://docker.com) `version`
-- [Git](https://git-scm.com) `version`
 
-## ☁️ Despliegue
- 
-### Build de producción
- 
-```bash
-# Build de producción
-npm run build
- 
-# Despliegue con Docker
-docker build -t nombre-proyecto .
-docker push registry/nombre-proyecto:latest
-```
- 
-### Ambientes disponibles
- 
-- **Desarrollo** — `http://localhost:3000` · rama `develop`
-- **Producción** — `https://app.com` · rama `main`
+- [Docker](https://docker.com)
+- [Docker Compose](https://docs.docker.com/compose/)
+- [Git](https://git-scm.com)
 
- 
+> No es necesario tener Node.js ni MySQL instalados localmente; todo corre dentro de contenedores Docker.
+
 ---
- 
+
+## 🚀 Cómo levantar el proyecto
+
+```bash
+# 1. Clonar el repositorio y ubicarse en la raíz
+git clone git@github.com:TheJuanRojasR/SENA-Asset-Control-System.git
+cd SENA-Asset-Control-System
+
+# 2. Copiar variables de entorno
+cp .env.example .env
+
+# 3. Levantar todos los servicios
+docker compose up -d --build
+
+# 4. Ver logs (opcional)
+docker compose logs -f
+```
+
+Servicios disponibles:
+
+| Servicio | URL |
+|----------|-----|
+| Cliente | http://localhost:5173 |
+| API | http://localhost:4000 |
+| Swagger | http://localhost:4000/api-docs |
+| Adminer (MySQL visual) | http://localhost:8080 |
+| MySQL local | `localhost:3307` |
+
+Credenciales de prueba:
+
+| Usuario | Contraseña | Rol |
+|---------|------------|-----|
+| `admin@sena.edu.co` | `AdminSENA2024` | Administrador |
+| `cmendoza@sena.edu.co` | `Instructor2024` | Instructor (mañana) |
+| `mgomez@misena.edu.co` | `Instructor2024` | Instructor (tarde) |
+| `ltorres@misena.edu.co` | `Instructor2024` | Instructor (noche) |
+
+### Comandos útiles
+
+```bash
+# Resetear base de datos con seed completo
+make db-reset
+
+# Generar cliente Prisma
+docker compose exec api npx prisma generate
+
+# Nueva migración
+docker compose exec api sh -c "export DATABASE_URL=\$MIGRATE_DATABASE_URL && npx prisma migrate dev --name <nombre>"
+```
+
+---
+
 ## 🧪 Ejecución de Pruebas
- 
-### Pruebas Unitarias
+
 ```bash
-npm run test:unit
+# Backend
+make test
+# o
+docker compose exec api npm test
+
+# Frontend
+make test-client
+# o
+docker compose exec client npm test
+
+# Lint
+make lint
+# o
+docker compose exec api npm run lint
+docker compose exec client npm run lint
 ```
- 
-### Pruebas de Integración
-```bash
-npm run test:integration
-```
- 
-### Pruebas End-to-End (E2E)
-```bash
-npm run test:e2e
-```
- 
-### Cobertura de Código
-```bash
-npm run test:coverage
-```
- 
-El reporte de cobertura se genera en `/coverage/index.html`
->[!NOTE]
-> Umbral mínimo requerido: **80%** de cobertura
----
- 
-## 📖 Documentación
- 
-La documentación completa del proyecto está disponible en la carpeta **`/docs`**, incluyendo:
- 
-- Arquitectura del sistema
-- Diagramas de flujo
----
- 
-## 👥 Autores
- 
-- **[TheJuanRojasR](https://github.com/TheJuanRojasR)** — Rol o Actividad
-- **[julian-david-parada-gil](https://github.com/julian-david-parada-gil)** — Rol o Actividad
-- **[joseph12n](https://github.com/joseph12n)** — Rol o Actividad
-- **[KevinSRDev](https://github.com/KevinSRDev)** — Rol o Actividad
+
+La base de datos de tests es `sena_inventario_test` y está configurada en `DATABASE_URL_TEST`. Los tests de backend la usan automáticamente cuando `NODE_ENV=test`.
 
 ---
- 
+
+## 📖 Documentación
+
+- **Bitácora de construcción**: [`docs/PROCESO.md`](./docs/PROCESO.md)
+- **Guía para agentes de código**: [`AGENTS.md`](./AGENTS.md)
+- **Guía de contribución**: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+
+---
+
+## 👥 Autores
+
+- **[TheJuanRojasR](https://github.com/TheJuanRojasR)**
+- **[julian-david-parada-gil](https://github.com/julian-david-parada-gil)**
+- **[joseph12n](https://github.com/joseph12n)**
+- **[KevinSRDev](https://github.com/KevinSRDev)**
+
+---
 
 ## 🤝 Contribución
-Para conocer el flujo de trabajo, convenciones de ramas, estándares de código y proceso
-de revisión, consulta el archivo **[CONTRIBUTING.md](./CONTRIBUTING.md)**.
+
+Para conocer el flujo de trabajo, convenciones de ramas, estándares de código y proceso de revisión, consulta el archivo **[CONTRIBUTING.md](./CONTRIBUTING.md)**.
 
 ---
- 
+
 ## 📄 Licencia
- 
-Este proyecto está bajo la licencia **[En revision](./LICENSE)** —
-consulta el archivo `LICENSE` para más detalles.
- 
----
+
+Este proyecto está bajo licencia **En revisión** — consulta el archivo `LICENSE` para más detalles.
