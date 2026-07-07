@@ -1,0 +1,22 @@
+{
+  "id": "T01",
+  "agente": "backend",
+  "objetivo": "Crear CRUD de categorías de ítems",
+  "contexto": "El administrador debe poder gestionar las categorías del catálogo (Audiovisuales, Cómputo, Redes, Herramientas, etc.). Una categoría tiene nombre único y descripción. No se debe eliminar una categoría que tenga ítems asociados.",
+  "archivos_afectados": [
+    "server/src/routes/category.routes.js",
+    "server/src/controllers/category.controller.js",
+    "server/src/services/category.service.js",
+    "server/src/repositories/category.repository.js",
+    "server/src/validations/category.validation.js",
+    "server/tests/integration/category.test.js"
+  ],
+  "criterios_aceptacion": [
+    "Solo el admin puede crear, listar, editar y eliminar categorías.",
+    "El nombre de la categoría debe ser único entre las activas.",
+    "No se permite eliminar una categoría con ítems asociados.",
+    "Los endpoints devuelven respuestas estandarizadas y manejan errores.",
+    "Se incluyen tests de integración."
+  ],
+  "verificacion": "docker compose exec api npm test"
+}
