@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore.js';
+import { ROLES } from '../../constants/roles.js';
 
 export function ProtectedRoute({ allowedRoles }) {
   const { isAuthenticated, user } = useAuthStore();
@@ -9,7 +10,8 @@ export function ProtectedRoute({ allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(user?.role)) {
-    return <Navigate to="/" replace />;
+    const redirect = user?.role === ROLES.ADMIN ? '/admin' : '/instructor';
+    return <Navigate to={redirect} replace />;
   }
 
   return <Outlet />;
