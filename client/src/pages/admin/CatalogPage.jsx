@@ -6,7 +6,7 @@ import { PageContainer } from '../../components/ui/PageContainer.jsx';
 import { CategoriesTab } from './CategoriesTab.jsx';
 import { ItemsTab } from './ItemsTab.jsx';
 
-const breadcrumbs = [{ label: 'Inicio', to: '/admin' }, { label: 'Catálogo' }];
+const breadcrumbs = [{ label: 'Inicio', to: '/admin' }, { label: 'Catálogos' }];
 
 export function CatalogPage() {
   const [activeTab, setActiveTab] = useState(0);
