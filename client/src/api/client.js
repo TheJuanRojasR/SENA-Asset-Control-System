@@ -16,13 +16,44 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+const clearAuthAndRedirect = () => {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('auth-storage');
+  window.location.href = '/login';
+};
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
     if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return apiClient(originalRequest);
+        });
+      }
+
       originalRequest._retry = true;
+      isRefreshing = true;
+
       try {
         const response = await axios.post(
           `${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/auth/refresh`,
@@ -31,12 +62,15 @@ apiClient.interceptors.response.use(
         );
         const { accessToken } = response.data.data;
         localStorage.setItem('accessToken', accessToken);
+        processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
-        localStorage.removeItem('accessToken');
-        window.location.href = '/login';
+        processQueue(refreshError, null);
+        clearAuthAndRedirect();
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
 
