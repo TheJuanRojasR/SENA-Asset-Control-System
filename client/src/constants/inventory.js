@@ -1,13 +1,13 @@
 export const SHIFTS = {
-  MORNING: 'MAÑANA',
-  AFTERNOON: 'TARDE',
-  EVENING: 'NOCHE',
+  MORNING: 'MORNING',
+  AFTERNOON: 'AFTERNOON',
+  NIGHT: 'NIGHT',
 };
 
 export const SHIFT_OPTIONS = [
   { value: SHIFTS.MORNING, label: 'Mañana' },
   { value: SHIFTS.AFTERNOON, label: 'Tarde' },
-  { value: SHIFTS.EVENING, label: 'Noche' },
+  { value: SHIFTS.NIGHT, label: 'Noche' },
 ];
 
 export const PHYSICAL_STATES = {
