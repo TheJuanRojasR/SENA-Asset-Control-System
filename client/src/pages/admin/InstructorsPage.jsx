@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -259,6 +259,7 @@ function InstructorFormDialog({ open, onClose, initialData, onSubmit, loading })
     handleSubmit,
     watch,
     reset,
+    control,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
@@ -384,9 +385,15 @@ function InstructorFormDialog({ open, onClose, initialData, onSubmit, loading })
               ))}
             </TextField>
           )}
-          <FormControlLabel
-            control={<Switch {...register('isActive')} defaultChecked />}
-            label="Activo"
+          <Controller
+            name="isActive"
+            control={control}
+            render={({ field }) => (
+              <FormControlLabel
+                control={<Switch {...field} checked={field.value} />}
+                label="Activo"
+              />
+            )}
           />
         </DialogContent>
         <DialogActions className="px-6 pb-4">
