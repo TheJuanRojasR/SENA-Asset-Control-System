@@ -70,9 +70,9 @@ export function CartPage() {
       const payload = {
         environmentId,
         shift,
-        items: items.map((item) => ({
-          itemId: item.id,
-          quantity: item.quantity,
+        items: items.map(({ id, quantity }) => ({
+          itemId: id,
+          requestedQty: Number(quantity),
         })),
       };
 
