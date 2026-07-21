@@ -13,6 +13,7 @@ import {
   Alert,
   CircularProgress,
   MenuItem,
+  Stack,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
@@ -194,79 +195,84 @@ export function CartPage() {
 
               <Divider className="my-3" />
 
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label="Ambiente"
-                value={environmentId}
-                onChange={(e) => setEnvironmentId(e.target.value)}
-                disabled={environmentsLoading}
-                className="mb-3"
-              >
-                <MenuItem value="">
-                  <em>Selecciona un ambiente</em>
-                </MenuItem>
-                {safeEnvironments.map((environment) => (
-                  <MenuItem key={environment.id} value={environment.id}>
-                    {environment.name}
+              <Stack spacing={2}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Ambiente"
+                  value={environmentId}
+                  onChange={(e) => setEnvironmentId(e.target.value)}
+                  disabled={environmentsLoading}
+                  className="mb-4"
+                >
+                  <MenuItem value="">
+                    <em>Selecciona un ambiente</em>
                   </MenuItem>
-                ))}
-              </TextField>
+                  {safeEnvironments.map((environment) => (
+                    <MenuItem key={environment.id} value={environment.id}>
+                      {environment.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
 
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label="Jornada"
-                value={shift}
-                onChange={(e) => setShift(e.target.value)}
-                className="mb-4"
-              >
-                <MenuItem value="">
-                  <em>Selecciona una jornada</em>
-                </MenuItem>
-                {SHIFT_OPTIONS.map((shiftOption) => (
-                  <MenuItem key={shiftOption.value} value={shiftOption.value}>
-                    {shiftOption.label}
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Jornada"
+                  value={shift}
+                  onChange={(e) => setShift(e.target.value)}
+                >
+                  <MenuItem value="">
+                    <em>Selecciona una jornada</em>
                   </MenuItem>
-                ))}
-              </TextField>
+                  {SHIFT_OPTIONS.map((shiftOption) => (
+                    <MenuItem key={shiftOption.value} value={shiftOption.value}>
+                      {shiftOption.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
 
-              {!isValid && (
-                <Alert severity="info" className="mb-3" size="small">
-                  Selecciona ambiente y jornada para continuar.
-                </Alert>
-              )}
+                {!isValid && (
+                  <Alert severity="info" size="small">
+                    Selecciona ambiente y jornada para continuar.
+                  </Alert>
+                )}
 
-              <Button
-                fullWidth
-                variant="contained"
-                size="large"
-                endIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
-                disabled={submitting || !isValid}
-                onClick={handleConfirm}
-                sx={{
-                  backgroundColor: SENA_COLORS.green,
-                  '&:hover': { backgroundColor: SENA_COLORS.greenDark },
-                }}
-              >
-                {submitting ? 'Enviando...' : 'Confirmar solicitud'}
-              </Button>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  size="large"
+                  endIcon={
+                    submitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />
+                  }
+                  disabled={submitting || !isValid}
+                  onClick={handleConfirm}
+                  sx={{
+                    backgroundColor: SENA_COLORS.green,
+                    '&:hover': { backgroundColor: SENA_COLORS.greenDark },
+                  }}
+                >
+                  {submitting ? 'Enviando...' : 'Confirmar solicitud'}
+                </Button>
 
-              <Button
-                fullWidth
-                variant="outlined"
-                className="mt-3"
-                onClick={() => navigate('/instructor/catalogo')}
-                sx={{
-                  color: SENA_COLORS.green,
-                  borderColor: SENA_COLORS.green,
-                  '&:hover': { borderColor: SENA_COLORS.greenDark, color: SENA_COLORS.greenDark },
-                }}
-              >
-                Seguir agregando
-              </Button>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  onClick={() => navigate('/instructor/catalogo')}
+                  sx={{
+                    color: SENA_COLORS.green,
+                    borderColor: SENA_COLORS.green,
+                    '&:hover': {
+                      borderColor: SENA_COLORS.greenDark,
+                      color: SENA_COLORS.greenDark,
+                    },
+                  }}
+                >
+                  Seguir agregando
+                </Button>
+              </Stack>
             </Paper>
           </Grid>
         </Grid>
