@@ -134,6 +134,13 @@ export const itemRepository = {
     });
   },
 
+  async hardDelete(id) {
+    return prisma.$transaction([
+      prisma.inventoryUnit.deleteMany({ where: { itemId: id }}),
+      prisma.item.delete({ where: { id } }),
+    ])
+  },
+
   async countLoanedUnits(id) {
     return prisma.inventoryUnit.count({
       where: { itemId: id, status: 'LOANED' },

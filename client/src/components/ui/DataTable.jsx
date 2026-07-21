@@ -27,7 +27,7 @@ export function DataTable({
   totalRows = 0,
   onPageChange,
   onEdit,
-  onDelete,
+  onHardDelete,
   onRetire,
   renderActions,
   actions = true,
@@ -141,11 +141,11 @@ export function DataTable({
                               <ArchiveIcon fontSize="small" />
                             </IconButton>
                           )}
-                          {onDelete && (
+                          {onHardDelete && (
                             <IconButton
                               size="small"
-                              onClick={() => onDelete(row)}
-                              aria-label="Eliminar"
+                              onClick={() => onHardDelete(row)}
+                              aria-label="Eliminar permanentemente"
                               className="text-red-500 hover:text-red-700"
                             >
                               <DeleteIcon fontSize="small" />

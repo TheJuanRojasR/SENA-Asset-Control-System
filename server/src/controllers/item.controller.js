@@ -37,4 +37,9 @@ export const itemController = {
     const result = await itemService.deleteItem(Number(req.params.id));
     successResponse(res, result, 'Ítem eliminado correctamente');
   }),
+
+  hardRemove: asyncHandler(async (req, res) => {
+    const result = await itemService.hardDeleteItem(Number(req.params.id));
+    successResponse(res, result, 'Item eliminado permanentemente');
+  }),
 };

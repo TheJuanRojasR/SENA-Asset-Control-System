@@ -57,6 +57,7 @@ export function ItemsTab() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [retireTarget, setRetireTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { data: items, isLoading: itemsLoading } = useQuery({
@@ -95,16 +96,24 @@ export function ItemsTab() {
     },
   });
 
-  const deleteMutation = useMutation({
+  const retireMutation = useMutation({
     mutationFn: (id) => itemsApi.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['items'] });
-      showToast('Ítem eliminado correctamente', 'success');
+      showToast('Ítem desactivado correctamente', 'success');
+      setRetireTarget(null);
+    },
+    onError: (error) => showToast(error?.response?.data?.message || 'Error al desactivar ítem', 'error'),
+  });
+
+  const hardDeleteMutation = useMutation({
+    mutationFn: (id) => itemsApi.hardDelete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+      showToast('Ítem eliminado permanentemente', 'success');
       setDeleteTarget(null);
     },
-    onError: (error) => {
-      showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error');
-    },
+    onError: (error) => showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error'),
   });
 
   const safeItems = useMemo(() => (Array.isArray(items) ? items : []), [items]);
@@ -149,7 +158,7 @@ export function ItemsTab() {
   };
 
   const handleConfirmDelete = () => {
-    if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+    if (deleteTarget) hardDeleteMutation.mutate(deleteTarget.id);
   };
 
   const getCategoryName = (categoryId) => {
@@ -227,7 +236,8 @@ export function ItemsTab() {
         loading={itemsLoading}
         emptyMessage="No se encontraron ítems."
         onEdit={handleOpenEdit}
-        onDelete={setDeleteTarget}
+        onRetire={setRetireTarget}
+        onHardDelete={setDeleteTarget}
       />
 
       <ItemFormDialog
@@ -246,7 +256,7 @@ export function ItemsTab() {
         message={`¿Estás seguro de eliminar el ítem ${deleteTarget?.name}? Esta acción no se puede deshacer.`}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
-        loading={deleteMutation.isPending}
+        loading={hardDeleteMutation.isPending}
         confirmColor="error"
       />
 
@@ -279,10 +289,10 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
       reset(
         initialData
           ? {
-              ...emptyValues,
-              ...initialData,
-              imageUrl: initialData.imageUrl || '',
-            }
+            ...emptyValues,
+            ...initialData,
+            imageUrl: initialData.imageUrl || '',
+          }
           : emptyValues
       );
       setComponents(

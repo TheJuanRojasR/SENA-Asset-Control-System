@@ -165,6 +165,20 @@ export const itemService = {
     await itemRepository.softDelete(id);
     return { message: 'Ítem eliminado correctamente' };
   },
+
+  async hardDeleteItem(id) {
+    const item = await itemRepository.findById(id);
+    if (!item) throw new AppError('Item no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+
+    const loanedCount = await itemRepository.countLoanedUnits(id);
+    if (loanedCount > 0) {
+      throw new AppError( 'No se puede eliminar el item porque tiene unidades en préstamo', HTTP_STATUS.CONFLICT, 'ITEM_HAS_LOANS' );
+    }
+
+    await itemRepository.hardDelete(id);
+    return { message: 'Item eliminado permanentemente' };
+  },
+
 };
 
 function buildInitialUnits(code, initialQty) {
