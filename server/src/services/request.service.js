@@ -386,25 +386,61 @@ export const requestService = {
     });
   },
 
-  async cancelRequest(requesterId, id) {
-    const request = await requestRepository.findById(id);
-    if (!request) {
-      throw new AppError('Solicitud no encontrada', HTTP_STATUS.NOT_FOUND, 'REQUEST_NOT_FOUND');
-    }
+  async cancelRequest(userId, id) {
+    return prisma.$transaction(async (tx) => {
+      const request = await requestRepository.findById(id, { tx });
+      if (!request) {
+        throw new AppError('Solicitud no encontrada', HTTP_STATUS.NOT_FOUND, 'REQUEST_NOT_FOUND');
+      }
 
-    if (request.requesterId !== requesterId) {
-      throw new AppError('No puede cancelar una solicitud de otro instructor', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
-    }
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        throw new AppError('Usuario no encontrado', HTTP_STATUS.NOT_FOUND, 'USER_NOT_FOUND');
+      }
 
-    if (request.status !== 'PENDING') {
-      throw new AppError('Solo se pueden cancelar solicitudes pendientes', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
-    }
+      if (user.role !== 'ADMIN' && request.requesterId !== userId) {
+        throw new AppError('No tiene permisos para cancelar esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
+      }
 
-    const updated = await requestRepository.update(id, {
-      status: 'CANCELLED',
+      if (!['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {
+        throw new AppError(
+          `No se puede cancelar una solicitud con estado '${request.status}'`,
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
+      }
+
+      if (request.status === 'PACKED') {
+        const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
+        const assignedUnits = requestItems.flatMap((item) => item.assignedUnits);
+
+        const unitIdsToUpdate = assignedUnits.map((unit) => unit.inventoryUnitId);
+
+        if (unitIdsToUpdate.length > 0) {
+          await tx.inventoryUnit.updateMany({
+            where: { id: { in: unitIdsToUpdate } },
+            data: { status: 'AVAILABLE' },
+          });
+        }
+
+        const requestItemIds = requestItems.map((item) => item.id);
+        if (requestItemIds.length > 0) {
+          await tx.requestItemUnit.deleteMany({
+            where: { requestItemId: { in: requestItemIds } },
+          });
+        }
+      }
+
+      const updated = await requestRepository.update(
+        id,
+        {
+          status: 'CANCELLED',
+        },
+        { tx }
+      );
+
+      return { request: updated };
     });
-
-    return { request: updated };
   },
 };
 
