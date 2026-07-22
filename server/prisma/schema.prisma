@@ -252,7 +252,7 @@ model RequestItem {
 model RequestItemUnit {
   id                    Int             @id @default(autoincrement())
   requestItemId         Int
-  inventoryUnitId       Int             @unique
+  inventoryUnitId       Int
   loanedAt              DateTime?
   returnedAt            DateTime?
   returnedById          Int?
@@ -263,6 +263,7 @@ model RequestItemUnit {
   inventoryUnit    InventoryUnit  @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
   returnedBy       User?          @relation("ReturnedByUser", fields: [returnedById], references: [id])
 
+  @@unique([requestItemId, inventoryUnitId])
   @@index([requestItemId])
   @@index([inventoryUnitId])
   @@index([returnedById])

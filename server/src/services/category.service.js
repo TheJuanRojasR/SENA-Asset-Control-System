@@ -58,7 +58,7 @@ export const categoryService = {
       );
     }
 
-    await categoryRepository.softDelete(id);
+    await categoryRepository.hardDelete(id);
     return { message: 'Categoría eliminada correctamente' };
   },
 };
