@@ -32,9 +32,9 @@ const unitSelect = {
 };
 
 export const itemRepository = {
-  async findManyActive(filters, { page = 1, limit = 20 } = {}) {
+  async findMany(filters, { page = 1, limit = 20, includeInactive = true } = {}) {
     return prisma.item.findMany({
-      where: buildWhere(filters),
+      where: buildWhere(filters, { includeInactive }),
       select: {
         ...defaultSelect,
         category: { select: categorySelect },
@@ -57,15 +57,19 @@ export const itemRepository = {
     });
   },
 
-  async count(filters) {
+  async findManyActive(filters, { page = 1, limit = 20 } = {}) {
+    return this.findMany(filters, { page, limit, includeInactive: false });
+  },
+
+  async count(filters, { includeInactive = true } = {}) {
     return prisma.item.count({
-      where: buildWhere(filters),
+      where: buildWhere(filters, { includeInactive }),
     });
   },
 
-  async findById(id) {
+  async findById(id, { includeDeleted = false } = {}) {
     return prisma.item.findFirst({
-      where: { id, isDeleted: false },
+      where: includeDeleted ? { id } : { id, isDeleted: false },
       select: {
         ...defaultSelect,
         category: { select: categorySelect },
@@ -116,9 +120,13 @@ export const itemRepository = {
   },
 
   async update(id, data) {
+    const { categoryId, ...itemData } = data;
     return prisma.item.update({
       where: { id },
-      data,
+      data: {
+        ...itemData,
+        ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
+      },
       select: {
         ...defaultSelect,
         category: { select: categorySelect },
@@ -130,6 +138,14 @@ export const itemRepository = {
     return prisma.item.update({
       where: { id },
       data: { isDeleted: true, isActive: false },
+      select: defaultSelect,
+    });
+  },
+
+  async restore(id) {
+    return prisma.item.update({
+      where: { id },
+      data: { isDeleted: false, isActive: true },
       select: defaultSelect,
     });
   },
@@ -184,8 +200,12 @@ export const itemRepository = {
   },
 };
 
-function buildWhere(filters) {
-  const where = { isDeleted: false };
+function buildWhere(filters = {}, { includeInactive = true } = {}) {
+  const where = {};
+
+  if (!includeInactive) {
+    where.isDeleted = false;
+  }
 
   if (filters.categoryId) where.categoryId = filters.categoryId;
   if (filters.search) {

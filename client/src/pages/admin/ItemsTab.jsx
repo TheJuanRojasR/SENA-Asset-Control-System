@@ -33,7 +33,7 @@ const itemSchema = z.object({
   code: z.string().min(2, 'El código debe tener al menos 2 caracteres'),
   name: z.string().min(3, 'El nombre debe tener al menos 3 caracteres'),
   description: z.string().optional(),
-  categoryId: z.string().min(1, 'Selecciona una categoría'),
+  categoryId: z.coerce.number().int().positive('Selecciona una categoría'),
   minStock: z.coerce.number().min(0, 'Debe ser mayor o igual a 0'),
   unit: z.string().min(1, 'Selecciona una unidad'),
   initialQty: z.coerce.number().min(0, 'Debe ser mayor o igual a 0'),
@@ -57,7 +57,7 @@ export function ItemsTab() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [retireTarget, setRetireTarget] = useState(null);
+  const [softDeleteTarget, setSoftDeleteTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { data: items, isLoading: itemsLoading } = useQuery({
@@ -96,14 +96,15 @@ export function ItemsTab() {
     },
   });
 
-  const retireMutation = useMutation({
+  const softDeleteMutation = useMutation({
     mutationFn: (id) => itemsApi.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['items'] });
       showToast('Ítem desactivado correctamente', 'success');
-      setRetireTarget(null);
+      setSoftDeleteTarget(null);
     },
-    onError: (error) => showToast(error?.response?.data?.message || 'Error al desactivar ítem', 'error'),
+    onError: (error) =>
+      showToast(error?.response?.data?.message || 'Error al desactivar ítem', 'error'),
   });
 
   const hardDeleteMutation = useMutation({
@@ -113,7 +114,8 @@ export function ItemsTab() {
       showToast('Ítem eliminado permanentemente', 'success');
       setDeleteTarget(null);
     },
-    onError: (error) => showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error'),
+    onError: (error) =>
+      showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error'),
   });
 
   const safeItems = useMemo(() => (Array.isArray(items) ? items : []), [items]);
@@ -157,6 +159,10 @@ export function ItemsTab() {
     }
   };
 
+  const handleConfirmSoftDelete = () => {
+    if (softDeleteTarget) softDeleteMutation.mutate(softDeleteTarget.id);
+  };
+
   const handleConfirmDelete = () => {
     if (deleteTarget) hardDeleteMutation.mutate(deleteTarget.id);
   };
@@ -183,6 +189,20 @@ export function ItemsTab() {
       field: 'unit',
       headerName: 'Unidad',
       render: (value) => UNIT_OPTIONS.find((u) => u.value === value)?.label || value,
+    },
+    {
+      field: 'isActive',
+      headerName: 'Estado',
+      render: (value) =>
+        value === false ? (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+            Inactivo
+          </span>
+        ) : (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+            Activo
+          </span>
+        ),
     },
     {
       field: 'components',
@@ -236,7 +256,7 @@ export function ItemsTab() {
         loading={itemsLoading}
         emptyMessage="No se encontraron ítems."
         onEdit={handleOpenEdit}
-        onRetire={setRetireTarget}
+        onRetire={setSoftDeleteTarget}
         onHardDelete={setDeleteTarget}
       />
 
@@ -248,6 +268,21 @@ export function ItemsTab() {
         loading={createMutation.isPending || updateMutation.isPending}
         categories={safeCategories}
         items={safeItems}
+      />
+
+      <ConfirmDialog
+        open={Boolean(softDeleteTarget)}
+        title={softDeleteTarget?.isActive === false ? 'Activar ítem' : 'Desactivar ítem'}
+        message={
+          softDeleteTarget?.isActive === false
+            ? `¿Estás seguro de activar el ítem ${softDeleteTarget?.name}?`
+            : `¿Estás seguro de desactivar el ítem ${softDeleteTarget?.name}?`
+        }
+        confirmText={softDeleteTarget?.isActive === false ? 'Activar' : 'Desactivar'}
+        onConfirm={handleConfirmSoftDelete}
+        onCancel={() => setSoftDeleteTarget(null)}
+        loading={softDeleteMutation.isPending}
+        confirmColor={softDeleteTarget?.isActive === false ? 'primary' : 'warning'}
       />
 
       <ConfirmDialog
@@ -289,10 +324,10 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
       reset(
         initialData
           ? {
-            ...emptyValues,
-            ...initialData,
-            imageUrl: initialData.imageUrl || '',
-          }
+              ...emptyValues,
+              ...initialData,
+              imageUrl: initialData.imageUrl || '',
+            }
           : emptyValues
       );
       setComponents(

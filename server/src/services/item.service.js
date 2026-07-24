@@ -40,9 +40,10 @@ const itemListSelect = {
 
 export const itemService = {
   async listItems(filters, pagination) {
+    const includeInactive = filters.includeInactive !== false;
     const [items, total] = await Promise.all([
-      itemRepository.findManyActive(filters, pagination),
-      itemRepository.count(filters),
+      itemRepository.findMany(filters, { ...pagination, includeInactive }),
+      itemRepository.count(filters, { includeInactive }),
     ]);
 
     const data = await Promise.all(
@@ -148,9 +149,14 @@ export const itemService = {
   },
 
   async deleteItem(id) {
-    const item = await itemRepository.findById(id);
+    const item = await itemRepository.findById(id, { includeDeleted: true });
     if (!item) {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+    }
+
+    if (item.isDeleted || !item.isActive) {
+      await itemRepository.restore(id);
+      return { message: 'Ítem activado correctamente' };
     }
 
     const loanedCount = await itemRepository.countLoanedUnits(id);
@@ -163,11 +169,11 @@ export const itemService = {
     }
 
     await itemRepository.softDelete(id);
-    return { message: 'Ítem eliminado correctamente' };
+    return { message: 'Ítem desactivado correctamente' };
   },
 
   async hardDeleteItem(id) {
-    const item = await itemRepository.findById(id);
+    const item = await itemRepository.findById(id, { includeDeleted: true });
     if (!item) throw new AppError('Item no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
 
     const loanedCount = await itemRepository.countLoanedUnits(id);
