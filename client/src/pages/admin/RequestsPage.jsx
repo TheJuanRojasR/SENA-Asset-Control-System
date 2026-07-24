@@ -21,7 +21,7 @@ import { DataTable } from '../../components/ui/DataTable.jsx';
 import { Toast } from '../../components/ui/Toast.jsx';
 import { useToast } from '../../hooks/useToast.js';
 import { requestsApi } from '../../api/requests.api.js';
-import { extractListData } from '../../utils/api.js';
+import { fetchAllListPages } from '../../utils/api.js';
 import {
   REQUEST_STATUS_LABELS,
   REQUEST_STATUS_COLORS,
@@ -53,8 +53,9 @@ export function RequestsPage() {
     error,
   } = useQuery({
     queryKey: ['requests'],
-    queryFn: () => requestsApi.getAll(),
-    select: extractListData,
+    // Historial completo: los tabs filtran en cliente y la paginación por
+    // defecto del backend (20) ocultaría solicitudes.
+    queryFn: () => fetchAllListPages((params) => requestsApi.getAll(params)),
   });
 
   const safeRequests = useMemo(() => (Array.isArray(requests) ? requests : []), [requests]);
@@ -67,8 +68,8 @@ export function RequestsPage() {
     return result.filter(
       (request) =>
         request.code?.toLowerCase().includes(term) ||
-        request.requesterName?.toLowerCase().includes(term) ||
-        request.requesterDocument?.toLowerCase().includes(term)
+        request.requester?.fullName?.toLowerCase().includes(term) ||
+        request.requester?.document?.toLowerCase().includes(term)
     );
   }, [safeRequests, currentStatus, search]);
 
@@ -80,15 +81,23 @@ export function RequestsPage() {
 
   const columns = [
     { field: 'code', headerName: 'Código' },
-    { field: 'requesterName', headerName: 'Solicitante' },
-    { field: 'requesterDocument', headerName: 'Documento' },
+    {
+      field: 'requester',
+      headerName: 'Solicitante',
+      render: (_value, row) => row.requester?.fullName ?? '-',
+    },
+    {
+      field: 'requesterDocument',
+      headerName: 'Documento',
+      render: (_value, row) => row.requester?.document ?? '-',
+    },
     {
       field: 'createdAt',
       headerName: 'Fecha',
       render: (value) => formatDate(value),
     },
     {
-      field: 'items',
+      field: 'requestItems',
       headerName: 'Ítems',
       render: (value) => (Array.isArray(value) ? value.length : 0),
     },

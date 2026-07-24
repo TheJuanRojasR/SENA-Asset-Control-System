@@ -331,7 +331,7 @@ export function RequestReviewPage() {
     );
   }
 
-  const items = Array.isArray(request.items) ? request.items : [];
+  const items = Array.isArray(request.requestItems) ? request.requestItems : [];
 
   return (
     <PageContainer
@@ -380,12 +380,13 @@ export function RequestReviewPage() {
               </Box>
 
               <InfoRow label="Código" value={request.code || request.id} />
-              <InfoRow label="Solicitante" value={request.requesterName || '-'} />
-              <InfoRow label="Documento" value={request.requesterDocument || '-'} />
-              <InfoRow label="Correo" value={request.requesterEmail || '-'} />
+              <InfoRow label="Solicitante" value={request.requester?.fullName || '-'} />
+              <InfoRow label="Documento" value={request.requester?.document || '-'} />
+              <InfoRow label="Correo" value={request.requester?.email || '-'} />
+              <InfoRow label="Teléfono" value={request.requester?.phone || '-'} />
               <InfoRow
                 label="Ambiente"
-                value={request.environmentName || request.environmentId || '-'}
+                value={request.environment?.name || request.environmentId || '-'}
               />
               <InfoRow label="Jornada" value={getShiftLabel(request.shift)} />
               <InfoRow label="Fecha de solicitud" value={formatDate(request.createdAt)} />
@@ -451,14 +452,10 @@ export function RequestReviewPage() {
                           transition={{ duration: 0.2, delay: index * 0.05 }}
                           className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
                         >
-                          <TableCell className="text-gray-700">
-                            {item.itemName || item.name || '-'}
-                          </TableCell>
-                          <TableCell className="text-gray-700">
-                            {item.itemCode || item.code || '-'}
-                          </TableCell>
+                          <TableCell className="text-gray-700">{item.item?.name || '-'}</TableCell>
+                          <TableCell className="text-gray-700">{item.item?.code || '-'}</TableCell>
                           <TableCell align="right" className="text-gray-700 font-bold">
-                            {item.quantity}
+                            {item.approvedQty ?? item.requestedQty ?? 0}
                           </TableCell>
                         </motion.tr>
                       ))
