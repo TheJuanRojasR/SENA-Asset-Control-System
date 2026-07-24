@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-sena-gray text-sena-black font-sans antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-sena-green hover:bg-sena-green-dark text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-sena-green border border-sena-green hover:bg-sena-green-light hover:text-sena-green-dark font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+  }
+
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/40 shadow-2xl;
+  }
+
+  .glass-dark {
+    @apply bg-sena-black/40 backdrop-blur-md border border-white/10 shadow-2xl text-white;
+  }
+}
