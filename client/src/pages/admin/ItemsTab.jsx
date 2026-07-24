@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -311,6 +311,7 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(itemSchema),
@@ -326,13 +327,20 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
           ? {
               ...emptyValues,
               ...initialData,
+              categoryId: initialData?.categoryId ?? initialData?.category?.id ?? '',
+              unit: initialData.unit || '',
+              initialQty:
+                initialData?.initialQty ??
+                initialData?.stock ??
+                initialData?.inventoryUnits?.length ??
+                0,
               imageUrl: initialData.imageUrl || '',
             }
           : emptyValues
       );
       setComponents(
         initialData?.components?.map((c) => ({
-          childItemId: c.childItemId,
+          childItemId: c.childItem?.id ?? c.childItemId,
           quantity: c.quantity,
           isRequired: c.isRequired,
         })) || []
@@ -364,10 +372,14 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
 
   const handleFormSubmit = (data) => {
     const payload = {
-      ...data,
+      code: data.code,
+      name: data.name,
+      description: data.description,
       categoryId: Number(data.categoryId),
       minStock: Number(data.minStock),
+      unit: data.unit,
       initialQty: Number(data.initialQty),
+      imageUrl: data.imageUrl,
       components: components.length > 0 ? components : undefined,
     };
     onSubmit(payload);
@@ -375,6 +387,7 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
 
   return (
     <Dialog
+      key={initialData?.id ?? 'new-item'}
       open={open}
       onClose={onClose}
       maxWidth="md"
@@ -422,36 +435,53 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
             helperText={errors.description?.message}
           />
           <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <TextField
-              {...register('categoryId')}
-              select
-              label="Categoría"
-              fullWidth
-              size="small"
-              error={!!errors.categoryId}
-              helperText={errors.categoryId?.message}
-            >
-              {categories.map((category) => (
-                <MenuItem key={category.id} value={category.id}>
-                  {category.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              {...register('unit')}
-              select
-              label="Unidad"
-              fullWidth
-              size="small"
-              error={!!errors.unit}
-              helperText={errors.unit?.message}
-            >
-              {UNIT_OPTIONS.map((unit) => (
-                <MenuItem key={unit.value} value={unit.value}>
-                  {unit.label}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Controller
+              name="categoryId"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Categoría"
+                  fullWidth
+                  size="small"
+                  value={field.value === '' || field.value == null ? '' : String(field.value)}
+                  error={!!errors.categoryId}
+                  helperText={errors.categoryId?.message}
+                  onChange={(event) =>
+                    field.onChange(event.target.value === '' ? '' : Number(event.target.value))
+                  }
+                >
+                  {categories.map((category) => (
+                    <MenuItem key={category.id} value={String(category.id)}>
+                      {category.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
+            <Controller
+              name="unit"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Unidad"
+                  fullWidth
+                  size="small"
+                  value={field.value ?? ''}
+                  error={!!errors.unit}
+                  helperText={errors.unit?.message}
+                >
+                  {UNIT_OPTIONS.map((unit) => (
+                    <MenuItem key={unit.value} value={unit.value}>
+                      {unit.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
           </Box>
           <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TextField

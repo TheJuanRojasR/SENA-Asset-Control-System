@@ -116,7 +116,7 @@ export const itemService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    const { components, ...itemData } = data;
+    const { components, initialQty, ...itemData } = data;
     await validateComponents(id, components);
 
     if (itemData.code) {
@@ -137,7 +137,14 @@ export const itemService = {
       if (components) {
         await itemRepository.setComponents(id, components, { tx });
       }
-      return itemRepository.update(id, itemData);
+      if (typeof initialQty === 'number') {
+        await reconcileInitialQty(tx, {
+          itemId: id,
+          code: itemData.code || item.code,
+          targetQty: initialQty,
+        });
+      }
+      return itemRepository.update(id, itemData, { tx });
     });
 
     return {
@@ -233,4 +240,35 @@ async function validateComponents(parentItemId, components) {
 
 async function calculateStock(item) {
   return itemRepository.countAvailableUnits(item.id);
+}
+
+async function reconcileInitialQty(tx, { itemId, code, targetQty }) {
+  const units = await tx.inventoryUnit.findMany({
+    where: { itemId },
+    select: { id: true, serialNumber: true, status: true },
+    orderBy: { serialNumber: 'asc' },
+  });
+
+  const availableUnits = units.filter((u) => u.status === 'AVAILABLE');
+  const diff = targetQty - availableUnits.length;
+  if (diff === 0) return;
+
+  if (diff < 0) {
+    const toDelete = availableUnits.slice(diff).map((u) => u.id);
+    await tx.inventoryUnit.deleteMany({ where: { id: { in: toDelete } } });
+    return;
+  }
+
+  const maxSuffix = units.reduce((max, unit) => {
+    const match = unit.serialNumber.match(/-(\d+)$/);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  const newUnits = Array.from({ length: diff }, (_, index) => {
+    const next = maxSuffix + index + 1;
+    return { itemId, serialNumber: `${code}-${String(next).padStart(3, '0')}` };
+  });
+
+  await tx.inventoryUnit.createMany({ data: newUnits });
 }

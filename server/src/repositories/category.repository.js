@@ -56,6 +56,13 @@ export const categoryRepository = {
     });
   },
 
+  async hardDelete(id) {
+    return prisma.category.delete({
+      where: { id },
+      select: defaultSelect,
+    });
+  },
+
   async countItems(id) {
     return prisma.item.count({
       where: { categoryId: id, isDeleted: false },

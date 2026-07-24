@@ -21,10 +21,8 @@ import { itemsApi } from '../../api/items.api.js';
 import { categoriesApi } from '../../api/categories.api.js';
 import { useCartStore } from '../../stores/cartStore.js';
 import { SENA_COLORS } from '../../constants/theme.js';
+import { extractListData } from '../../utils/api.js';
 
-function extractData(response) {
-  return response?.data?.data ?? response?.data ?? [];
-}
 
 export function CatalogPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -47,8 +45,8 @@ export function CatalogPage() {
     queryFn: () => categoriesApi.getAll(),
   });
 
-  const items = extractData(itemsResponse);
-  const categories = extractData(categoriesResponse);
+  const items = extractListData(itemsResponse);
+  const categories = extractListData(categoriesResponse);
 
   const filteredItems = items.filter((item) => {
     const categoryId = item.categoryId || item.category?.id || item.category;

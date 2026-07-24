@@ -119,9 +119,11 @@ export const itemRepository = {
     });
   },
 
-  async update(id, data) {
+  async update(id, data, { tx } = {}) {
+    const db = tx || prisma;
     const { categoryId, ...itemData } = data;
-    return prisma.item.update({
+    delete itemData.initialQty;
+    return db.item.update({
       where: { id },
       data: {
         ...itemData,
