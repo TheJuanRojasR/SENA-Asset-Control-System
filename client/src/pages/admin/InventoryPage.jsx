@@ -60,7 +60,7 @@ const emptyValues = {
   environmentId: '',
   serialNumber: '',
   physicalState: '',
-  status: INVENTORY_STATUS.ACTIVE,
+  status: INVENTORY_STATUS.AVAILABLE,
 };
 
 const breadcrumbs = [{ label: 'Inicio', to: '/admin' }, { label: 'Inventario' }];
@@ -131,7 +131,7 @@ export function InventoryPage() {
   });
 
   const retireMutation = useMutation({
-    mutationFn: (id) => inventoryApi.update(id, { status: INVENTORY_STATUS.LOW }),
+    mutationFn: (id) => inventoryApi.update(id, { status: INVENTORY_STATUS.DISPOSED }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       showToast('Unidad dada de baja correctamente', 'success');
@@ -233,10 +233,17 @@ export function InventoryPage() {
   };
 
   const handleSubmit = (data) => {
+    const payload = {
+      ...data,
+      itemId: Number(data.itemId),
+      environmentId: Number(data.environmentId),
+      serialNumber: data.serialNumber?.trim() || undefined,
+    };
+
     if (editing) {
-      updateMutation.mutate({ id: editing.id, data });
+      updateMutation.mutate({ id: editing.id, data: payload });
     } else {
-      createMutation.mutate({ ...data, status: INVENTORY_STATUS.ACTIVE });
+      createMutation.mutate(payload);
     }
   };
 
@@ -290,7 +297,6 @@ export function InventoryPage() {
   ];
 
   const isLoading = inventoryLoading || itemsLoading || environmentsLoading;
-
   return (
     <PageContainer title="Gestión de inventario" breadcrumbs={breadcrumbs}>
       <Box className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
@@ -752,7 +758,16 @@ function InventoryFormDialog({
 
   useEffect(() => {
     if (open) {
-      reset(initialData ? { ...emptyValues, ...initialData } : emptyValues);
+      reset(
+        initialData
+          ? {
+              ...emptyValues,
+              ...initialData,
+              itemId: String(initialData.itemId ?? ''),
+              environmentId: String(initialData.environmentId ?? ''),
+            }
+          : emptyValues
+      );
     }
   }, [open, initialData, reset]);
 
@@ -787,7 +802,7 @@ function InventoryFormDialog({
             disabled={isEditing}
           >
             {items.map((item) => (
-              <MenuItem key={item.id} value={item.id}>
+              <MenuItem key={item.id} value={String(item.id)}>
                 {item.name}
               </MenuItem>
             ))}
@@ -802,7 +817,7 @@ function InventoryFormDialog({
             helperText={errors.environmentId?.message}
           >
             {environments.map((env) => (
-              <MenuItem key={env.id} value={env.id}>
+              <MenuItem key={env.id} value={String(env.id)}>
                 {env.name}
               </MenuItem>
             ))}

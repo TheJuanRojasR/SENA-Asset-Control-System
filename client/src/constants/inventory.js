@@ -11,29 +11,33 @@ export const SHIFT_OPTIONS = [
 ];
 
 export const PHYSICAL_STATES = {
-  GOOD: 'BUENO',
+  GOOD: 'GOOD',
   REGULAR: 'REGULAR',
-  BAD: 'MALO',
-  DAMAGED: 'DAÑADO',
+  DAMAGED: 'DAMAGED',
+  DISPOSED: 'DISPOSED',
 };
 
 export const PHYSICAL_STATE_OPTIONS = [
   { value: PHYSICAL_STATES.GOOD, label: 'Bueno' },
   { value: PHYSICAL_STATES.REGULAR, label: 'Regular' },
-  { value: PHYSICAL_STATES.BAD, label: 'Malo' },
   { value: PHYSICAL_STATES.DAMAGED, label: 'Dañado' },
+  { value: PHYSICAL_STATES.DISPOSED, label: 'Dado de baja' },
 ];
 
 export const INVENTORY_STATUS = {
-  ACTIVE: 'ACTIVO',
-  INACTIVE: 'INACTIVO',
-  LOW: 'BAJA',
+  AVAILABLE: 'AVAILABLE',
+  RESERVED: 'RESERVED',
+  LOANED: 'LOANED',
+  MAINTENANCE: 'MAINTENANCE',
+  DISPOSED: 'DISPOSED',
 };
 
 export const INVENTORY_STATUS_OPTIONS = [
-  { value: INVENTORY_STATUS.ACTIVE, label: 'Activo' },
-  { value: INVENTORY_STATUS.INACTIVE, label: 'Inactivo' },
-  { value: INVENTORY_STATUS.LOW, label: 'De baja' },
+  { value: INVENTORY_STATUS.AVAILABLE, label: 'Disponible' },
+  { value: INVENTORY_STATUS.RESERVED, label: 'Reservado' },
+  { value: INVENTORY_STATUS.LOANED, label: 'Prestado' },
+  { value: INVENTORY_STATUS.MAINTENANCE, label: 'Mantenimiento' },
+  { value: INVENTORY_STATUS.DISPOSED, label: 'Dado de baja' },
 ];
 
 export const UNITS = {
