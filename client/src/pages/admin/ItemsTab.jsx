@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -33,7 +33,7 @@ const itemSchema = z.object({
   code: z.string().min(2, 'El código debe tener al menos 2 caracteres'),
   name: z.string().min(3, 'El nombre debe tener al menos 3 caracteres'),
   description: z.string().optional(),
-  categoryId: z.string().min(1, 'Selecciona una categoría'),
+  categoryId: z.coerce.number().int().positive('Selecciona una categoría'),
   minStock: z.coerce.number().min(0, 'Debe ser mayor o igual a 0'),
   unit: z.string().min(1, 'Selecciona una unidad'),
   initialQty: z.coerce.number().min(0, 'Debe ser mayor o igual a 0'),
@@ -57,6 +57,7 @@ export function ItemsTab() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [softDeleteTarget, setSoftDeleteTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { data: items, isLoading: itemsLoading } = useQuery({
@@ -95,16 +96,26 @@ export function ItemsTab() {
     },
   });
 
-  const deleteMutation = useMutation({
+  const softDeleteMutation = useMutation({
     mutationFn: (id) => itemsApi.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['items'] });
-      showToast('Ítem eliminado correctamente', 'success');
+      showToast('Ítem desactivado correctamente', 'success');
+      setSoftDeleteTarget(null);
+    },
+    onError: (error) =>
+      showToast(error?.response?.data?.message || 'Error al desactivar ítem', 'error'),
+  });
+
+  const hardDeleteMutation = useMutation({
+    mutationFn: (id) => itemsApi.hardDelete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+      showToast('Ítem eliminado permanentemente', 'success');
       setDeleteTarget(null);
     },
-    onError: (error) => {
-      showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error');
-    },
+    onError: (error) =>
+      showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error'),
   });
 
   const safeItems = useMemo(() => (Array.isArray(items) ? items : []), [items]);
@@ -148,8 +159,12 @@ export function ItemsTab() {
     }
   };
 
+  const handleConfirmSoftDelete = () => {
+    if (softDeleteTarget) softDeleteMutation.mutate(softDeleteTarget.id);
+  };
+
   const handleConfirmDelete = () => {
-    if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+    if (deleteTarget) hardDeleteMutation.mutate(deleteTarget.id);
   };
 
   const getCategoryName = (categoryId) => {
@@ -174,6 +189,20 @@ export function ItemsTab() {
       field: 'unit',
       headerName: 'Unidad',
       render: (value) => UNIT_OPTIONS.find((u) => u.value === value)?.label || value,
+    },
+    {
+      field: 'isActive',
+      headerName: 'Estado',
+      render: (value) =>
+        value === false ? (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+            Inactivo
+          </span>
+        ) : (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+            Activo
+          </span>
+        ),
     },
     {
       field: 'components',
@@ -227,7 +256,8 @@ export function ItemsTab() {
         loading={itemsLoading}
         emptyMessage="No se encontraron ítems."
         onEdit={handleOpenEdit}
-        onDelete={setDeleteTarget}
+        onRetire={setSoftDeleteTarget}
+        onHardDelete={setDeleteTarget}
       />
 
       <ItemFormDialog
@@ -241,12 +271,27 @@ export function ItemsTab() {
       />
 
       <ConfirmDialog
+        open={Boolean(softDeleteTarget)}
+        title={softDeleteTarget?.isActive === false ? 'Activar ítem' : 'Desactivar ítem'}
+        message={
+          softDeleteTarget?.isActive === false
+            ? `¿Estás seguro de activar el ítem ${softDeleteTarget?.name}?`
+            : `¿Estás seguro de desactivar el ítem ${softDeleteTarget?.name}?`
+        }
+        confirmText={softDeleteTarget?.isActive === false ? 'Activar' : 'Desactivar'}
+        onConfirm={handleConfirmSoftDelete}
+        onCancel={() => setSoftDeleteTarget(null)}
+        loading={softDeleteMutation.isPending}
+        confirmColor={softDeleteTarget?.isActive === false ? 'primary' : 'warning'}
+      />
+
+      <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Eliminar ítem"
         message={`¿Estás seguro de eliminar el ítem ${deleteTarget?.name}? Esta acción no se puede deshacer.`}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
-        loading={deleteMutation.isPending}
+        loading={hardDeleteMutation.isPending}
         confirmColor="error"
       />
 
@@ -266,6 +311,7 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(itemSchema),
@@ -281,13 +327,20 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
           ? {
               ...emptyValues,
               ...initialData,
+              categoryId: initialData?.categoryId ?? initialData?.category?.id ?? '',
+              unit: initialData.unit || '',
+              initialQty:
+                initialData?.initialQty ??
+                initialData?.stock ??
+                initialData?.inventoryUnits?.length ??
+                0,
               imageUrl: initialData.imageUrl || '',
             }
           : emptyValues
       );
       setComponents(
         initialData?.components?.map((c) => ({
-          childItemId: c.childItemId,
+          childItemId: c.childItem?.id ?? c.childItemId,
           quantity: c.quantity,
           isRequired: c.isRequired,
         })) || []
@@ -319,10 +372,14 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
 
   const handleFormSubmit = (data) => {
     const payload = {
-      ...data,
+      code: data.code,
+      name: data.name,
+      description: data.description,
       categoryId: Number(data.categoryId),
       minStock: Number(data.minStock),
+      unit: data.unit,
       initialQty: Number(data.initialQty),
+      imageUrl: data.imageUrl,
       components: components.length > 0 ? components : undefined,
     };
     onSubmit(payload);
@@ -330,6 +387,7 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
 
   return (
     <Dialog
+      key={initialData?.id ?? 'new-item'}
       open={open}
       onClose={onClose}
       maxWidth="md"
@@ -377,36 +435,53 @@ function ItemFormDialog({ open, onClose, initialData, onSubmit, loading, categor
             helperText={errors.description?.message}
           />
           <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <TextField
-              {...register('categoryId')}
-              select
-              label="Categoría"
-              fullWidth
-              size="small"
-              error={!!errors.categoryId}
-              helperText={errors.categoryId?.message}
-            >
-              {categories.map((category) => (
-                <MenuItem key={category.id} value={category.id}>
-                  {category.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              {...register('unit')}
-              select
-              label="Unidad"
-              fullWidth
-              size="small"
-              error={!!errors.unit}
-              helperText={errors.unit?.message}
-            >
-              {UNIT_OPTIONS.map((unit) => (
-                <MenuItem key={unit.value} value={unit.value}>
-                  {unit.label}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Controller
+              name="categoryId"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Categoría"
+                  fullWidth
+                  size="small"
+                  value={field.value === '' || field.value == null ? '' : String(field.value)}
+                  error={!!errors.categoryId}
+                  helperText={errors.categoryId?.message}
+                  onChange={(event) =>
+                    field.onChange(event.target.value === '' ? '' : Number(event.target.value))
+                  }
+                >
+                  {categories.map((category) => (
+                    <MenuItem key={category.id} value={String(category.id)}>
+                      {category.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
+            <Controller
+              name="unit"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Unidad"
+                  fullWidth
+                  size="small"
+                  value={field.value ?? ''}
+                  error={!!errors.unit}
+                  helperText={errors.unit?.message}
+                >
+                  {UNIT_OPTIONS.map((unit) => (
+                    <MenuItem key={unit.value} value={unit.value}>
+                      {unit.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
           </Box>
           <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TextField

@@ -8,6 +8,7 @@ export const itemController = {
     const filters = {
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
       search: req.query.search,
+      includeInactive: req.query.includeInactive !== 'false',
     };
     const pagination = {
       page: Number(req.query.page) || 1,
@@ -36,5 +37,10 @@ export const itemController = {
   remove: asyncHandler(async (req, res) => {
     const result = await itemService.deleteItem(Number(req.params.id));
     successResponse(res, result, 'Ítem eliminado correctamente');
+  }),
+
+  hardRemove: asyncHandler(async (req, res) => {
+    const result = await itemService.hardDeleteItem(Number(req.params.id));
+    successResponse(res, result, 'Item eliminado permanentemente');
   }),
 };

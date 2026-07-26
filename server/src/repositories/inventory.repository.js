@@ -77,6 +77,24 @@ export const inventoryRepository = {
     });
   },
 
+  async hardDelete(id) {
+    return prisma.$transaction(async (tx) => {
+      await tx.inventoryUnit.updateMany({
+        where: { parentUnitId: id },
+        data: { parentUnitId: null },
+      });
+
+      await tx.movement.deleteMany({
+        where: { inventoryUnitId: id },
+      });
+
+      return tx.inventoryUnit.delete({
+        where: { id },
+        select: defaultSelect,
+      });
+    });
+  },
+
   async count(filters = {}) {
     return prisma.inventoryUnit.count({ where: buildWhere(filters) });
   },

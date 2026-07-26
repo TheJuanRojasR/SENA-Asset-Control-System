@@ -26,6 +26,7 @@ export const updateItemSchema = z.object({
   categoryId: z.number().int().positive().optional(),
   minStock: z.number().int().nonnegative().optional(),
   unit: z.string().min(1).max(50).optional(),
+  initialQty: z.number().int().nonnegative().optional(),
   isConsumable: z.boolean().optional(),
   imageUrl: z.string().url().optional().nullable(),
   components: z.array(componentSchema).optional(),

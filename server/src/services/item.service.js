@@ -40,9 +40,10 @@ const itemListSelect = {
 
 export const itemService = {
   async listItems(filters, pagination) {
+    const includeInactive = filters.includeInactive !== false;
     const [items, total] = await Promise.all([
-      itemRepository.findManyActive(filters, pagination),
-      itemRepository.count(filters),
+      itemRepository.findMany(filters, { ...pagination, includeInactive }),
+      itemRepository.count(filters, { includeInactive }),
     ]);
 
     const data = await Promise.all(items.map(withAvailability));
@@ -105,7 +106,7 @@ export const itemService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    const { components, ...itemData } = data;
+    const { components, initialQty, ...itemData } = data;
     await validateComponents(id, components);
 
     if (itemData.code) {
@@ -126,7 +127,14 @@ export const itemService = {
       if (components) {
         await itemRepository.setComponents(id, components, { tx });
       }
-      return itemRepository.update(id, itemData);
+      if (typeof initialQty === 'number') {
+        await reconcileInitialQty(tx, {
+          itemId: id,
+          code: itemData.code || item.code,
+          targetQty: initialQty,
+        });
+      }
+      return itemRepository.update(id, itemData, { tx });
     });
 
     return {
@@ -138,9 +146,14 @@ export const itemService = {
   },
 
   async deleteItem(id) {
-    const item = await itemRepository.findById(id);
+    const item = await itemRepository.findById(id, { includeDeleted: true });
     if (!item) {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+    }
+
+    if (item.isDeleted || !item.isActive) {
+      await itemRepository.restore(id);
+      return { message: 'Ítem activado correctamente' };
     }
 
     const loanedCount = await itemRepository.countLoanedUnits(id);
@@ -153,8 +166,22 @@ export const itemService = {
     }
 
     await itemRepository.softDelete(id);
-    return { message: 'Ítem eliminado correctamente' };
+    return { message: 'Ítem desactivado correctamente' };
   },
+
+  async hardDeleteItem(id) {
+    const item = await itemRepository.findById(id, { includeDeleted: true });
+    if (!item) throw new AppError('Item no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+
+    const loanedCount = await itemRepository.countLoanedUnits(id);
+    if (loanedCount > 0) {
+      throw new AppError( 'No se puede eliminar el item porque tiene unidades en préstamo', HTTP_STATUS.CONFLICT, 'ITEM_HAS_LOANS' );
+    }
+
+    await itemRepository.hardDelete(id);
+    return { message: 'Item eliminado permanentemente' };
+  },
+
 };
 
 function buildInitialUnits(code, initialQty) {
@@ -205,6 +232,35 @@ async function calculateStock(item) {
   return itemRepository.countAvailableUnits(item.id);
 }
 
+async function reconcileInitialQty(tx, { itemId, code, targetQty }) {
+  const units = await tx.inventoryUnit.findMany({
+    where: { itemId },
+    select: { id: true, serialNumber: true, status: true },
+    orderBy: { serialNumber: 'asc' },
+  });
+
+  const availableUnits = units.filter((u) => u.status === 'AVAILABLE');
+  const diff = targetQty - availableUnits.length;
+  if (diff === 0) return;
+
+  if (diff < 0) {
+    const toDelete = availableUnits.slice(diff).map((u) => u.id);
+    await tx.inventoryUnit.deleteMany({ where: { id: { in: toDelete } } });
+    return;
+  }
+
+  const maxSuffix = units.reduce((max, unit) => {
+    const match = unit.serialNumber.match(/-(\d+)$/);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  const newUnits = Array.from({ length: diff }, (_, index) => {
+    const next = maxSuffix + index + 1;
+    return { itemId, serialNumber: `${code}-${String(next).padStart(3, '0')}` };
+  });
+
+  await tx.inventoryUnit.createMany({ data: newUnits });
 /**
  * Enriquece un ítem con su disponibilidad efectiva.
  * Ítems simples: { stock, available }.

@@ -66,6 +66,31 @@ describe('Item endpoints', () => {
       expect(response.body.data.data).toHaveLength(1);
       expect(response.body.data.data[0].name).toBe('Taladro');
     });
+
+    it('debe incluir ítems desactivados cuando se solicite explícitamente', async () => {
+      const admin = await createAdminUser();
+      const token = generateAccessToken(admin);
+      const category = await createCategory();
+
+      await prismaTest.item.create({
+        data: {
+          code: 'TAL-002',
+          name: 'Taladro desactivado',
+          categoryId: category.id,
+          isDeleted: true,
+          isActive: false,
+        },
+      });
+
+      const response = await request(app)
+        .get('/api/items?includeInactive=true')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.data).toHaveLength(1);
+      expect(response.body.data.data[0].name).toBe('Taladro desactivado');
+      expect(response.body.data.data[0].isActive).toBe(false);
+    });
   });
 
   describe('GET /api/items/:id', () => {

@@ -344,6 +344,69 @@ describe('Inventory endpoints', () => {
       expect(stillExists.status).toBe('DISPOSED');
     });
 
+    it('debe restablecer una unidad dada de baja', async () => {
+      const unit = await prismaTest.inventoryUnit.create({
+        data: {
+          itemId: item.id,
+          serialNumber: 'LAPTOP-001-004',
+          status: 'DISPOSED',
+          physicalState: 'DISPOSED',
+        },
+      });
+
+      const response = await request(app)
+        .post(`/api/inventory/${unit.id}/restore`)
+        .set('Authorization', authHeader(admin));
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.unit.status).toBe('AVAILABLE');
+      expect(response.body.data.unit.physicalState).toBe('GOOD');
+    });
+
+    it('debe eliminar permanentemente una unidad como admin', async () => {
+      const unit = await prismaTest.inventoryUnit.create({
+        data: {
+          itemId: item.id,
+          serialNumber: 'LAPTOP-001-002',
+          status: 'AVAILABLE',
+          physicalState: 'GOOD',
+          movements: {
+            create: [{ type: 'ADJUSTMENT', quantity: 1 }],
+          },
+        },
+      });
+
+      const child = await prismaTest.inventoryUnit.create({
+        data: {
+          itemId: item.id,
+          serialNumber: 'LAPTOP-001-003',
+          status: 'AVAILABLE',
+          physicalState: 'GOOD',
+          parentUnitId: unit.id,
+        },
+      });
+
+      const response = await request(app)
+        .delete(`/api/inventory/${unit.id}/hard`)
+        .set('Authorization', authHeader(admin));
+
+      expect(response.status).toBe(200);
+
+      const deleted = await prismaTest.inventoryUnit.findUnique({
+        where: { id: unit.id },
+      });
+      const detachedChild = await prismaTest.inventoryUnit.findUnique({
+        where: { id: child.id },
+      });
+      const movements = await prismaTest.movement.findMany({
+        where: { inventoryUnitId: unit.id },
+      });
+
+      expect(deleted).toBeNull();
+      expect(detachedChild.parentUnitId).toBeNull();
+      expect(movements).toHaveLength(0);
+    });
+
     it('debe rechazar dar de baja una unidad ya dada de baja', async () => {
       const unit = await prismaTest.inventoryUnit.create({
         data: {

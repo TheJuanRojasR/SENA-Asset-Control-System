@@ -10,6 +10,11 @@ export default [
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
       globals: {
         console: 'readonly',
         process: 'readonly',
@@ -31,6 +36,36 @@ export default [
     },
   },
   {
-    ignores: ['node_modules/', 'client/node_modules/', 'server/node_modules/', 'dist/', 'build/', 'coverage/', 'client/dist/', 'server/prisma/generated/'],
+    files: ['**/*.jsx'],
+    rules: {
+      'no-unused-vars': 'off',
+    },
+  },
+  {
+    files: ['server/tests/**/*.js'],
+    languageOptions: {
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        jest: 'readonly',
+      },
+    },
+  },
+  {
+    ignores: [
+      'node_modules/',
+      'client/node_modules/',
+      'server/node_modules/',
+      'dist/',
+      'build/',
+      'coverage/',
+      'client/dist/',
+      'server/prisma/generated/',
+    ],
   },
 ];

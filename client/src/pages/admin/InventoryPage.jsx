@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -19,15 +19,16 @@ import {
   Paper,
   Typography,
   Skeleton,
+  IconButton,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArchiveIcon from '@mui/icons-material/Archive';
+import RestoreFromTrashIcon from '@mui/icons-material/RestoreFromTrash';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import BuildIcon from '@mui/icons-material/Build';
-import { IconButton } from '@mui/material';
 import { motion } from 'framer-motion';
 import { PageContainer } from '../../components/ui/PageContainer.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
@@ -60,7 +61,7 @@ const emptyValues = {
   environmentId: '',
   serialNumber: '',
   physicalState: '',
-  status: INVENTORY_STATUS.ACTIVE,
+  status: INVENTORY_STATUS.AVAILABLE,
 };
 
 const breadcrumbs = [{ label: 'Inicio', to: '/admin' }, { label: 'Inventario' }];
@@ -77,6 +78,7 @@ export function InventoryPage() {
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [retireTarget, setRetireTarget] = useState(null);
+  const [restoreTarget, setRestoreTarget] = useState(null);
   const [detailUnit, setDetailUnit] = useState(null);
   const [assembleUnit, setAssembleUnit] = useState(null);
   const [selectedChildUnits, setSelectedChildUnits] = useState([]);
@@ -131,7 +133,7 @@ export function InventoryPage() {
   });
 
   const retireMutation = useMutation({
-    mutationFn: (id) => inventoryApi.update(id, { status: INVENTORY_STATUS.LOW }),
+    mutationFn: (id) => inventoryApi.update(id, { status: INVENTORY_STATUS.DISPOSED }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       showToast('Unidad dada de baja correctamente', 'success');
@@ -142,11 +144,23 @@ export function InventoryPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id) => inventoryApi.remove(id),
+  const restoreMutation = useMutation({
+    mutationFn: (id) => inventoryApi.restore(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      showToast('Unidad eliminada correctamente', 'success');
+      showToast('Unidad restablecida correctamente', 'success');
+      setRestoreTarget(null);
+    },
+    onError: (error) => {
+      showToast(error?.response?.data?.message || 'Error al restablecer la unidad', 'error');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => inventoryApi.hardRemove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      showToast('Unidad eliminada permanentemente', 'success');
       setDeleteTarget(null);
     },
     onError: (error) => {
@@ -233,10 +247,17 @@ export function InventoryPage() {
   };
 
   const handleSubmit = (data) => {
+    const payload = {
+      ...data,
+      itemId: Number(data.itemId),
+      environmentId: Number(data.environmentId),
+      serialNumber: data.serialNumber?.trim() || undefined,
+    };
+
     if (editing) {
-      updateMutation.mutate({ id: editing.id, data });
+      updateMutation.mutate({ id: editing.id, data: payload });
     } else {
-      createMutation.mutate({ ...data, status: INVENTORY_STATUS.ACTIVE });
+      createMutation.mutate(payload);
     }
   };
 
@@ -247,6 +268,185 @@ export function InventoryPage() {
   const handleConfirmRetire = () => {
     if (retireTarget) retireMutation.mutate(retireTarget.id);
   };
+
+  const handleConfirmRestore = () => {
+    if (restoreTarget) restoreMutation.mutate(restoreTarget.id);
+  };
+
+  const renderStatusAction = (row) => {
+    if (row.status === 'DISPOSED') {
+      return (
+        <IconButton
+          size="small"
+          onClick={() => setRestoreTarget(row)}
+          aria-label="Restablecer unidad"
+          className="text-blue-600 hover:text-blue-800"
+        >
+          <RestoreFromTrashIcon fontSize="small" />
+        </IconButton>
+      );
+    }
+
+    return (
+      <IconButton
+        size="small"
+        onClick={() => setRetireTarget(row)}
+        aria-label="Dar de baja"
+        className="text-amber-600 hover:text-amber-800"
+      >
+        <ArchiveIcon fontSize="small" />
+      </IconButton>
+    );
+  };
+
+  const handleChildUnitToggle = (childId, isSelected) => {
+    setSelectedChildUnits((prev) =>
+      isSelected ? prev.filter((id) => id !== childId) : [...prev, childId]
+    );
+  };
+
+  let detailContent = null;
+  let assemblyStatusChip = null;
+
+  if (unitDetail?.isComplete) {
+    assemblyStatusChip = <Chip label="Completo" size="small" color="success" />;
+  } else if (unitDetail) {
+    assemblyStatusChip = <Chip label="Incompleto" size="small" color="warning" />;
+  }
+
+  if (unitDetailLoading) {
+    detailContent = (
+      <Box className="space-y-2">
+        <Skeleton variant="text" />
+        <Skeleton variant="text" />
+      </Box>
+    );
+  } else if (unitDetail) {
+    detailContent = (
+      <>
+        <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TextField
+            label="Ítem"
+            value={unitDetail.item?.name || ''}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Serial"
+            value={unitDetail.serialNumber || ''}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Ambiente"
+            value={unitDetail.environment?.name || '-'}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Estado"
+            value={
+              INVENTORY_STATUS_OPTIONS.find((s) => s.value === unitDetail.status)?.label ||
+              unitDetail.status ||
+              ''
+            }
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+        </Box>
+
+        {unitDetail.parentUnit && (
+          <Alert severity="info">
+            Esta unidad pertenece a{' '}
+            <strong>
+              {unitDetail.parentUnit.item?.name} #{unitDetail.parentUnit.serialNumber}
+            </strong>
+          </Alert>
+        )}
+
+        {unitDetail.itemHasComponents && (
+          <Box>
+            <Box className="flex items-center gap-2 mb-2">
+              <Typography variant="subtitle2" className="font-bold">
+                Estado del ensamble:
+              </Typography>
+              {assemblyStatusChip}
+            </Box>
+
+            {unitDetail.childUnits && unitDetail.childUnits.length > 0 && (
+              <Box className="space-y-2 mb-3">
+                <Typography variant="body2" className="font-semibold">
+                  Componentes ensamblados:
+                </Typography>
+                {unitDetail.childUnits.map((child) => (
+                  <Paper
+                    key={child.id}
+                    className="p-2 flex justify-between items-center border border-gray-100"
+                  >
+                    <Box>
+                      <Typography variant="body2" className="font-medium">
+                        {child.item?.name}
+                      </Typography>
+                      <Typography variant="caption" className="text-gray-500">
+                        Serial: {child.serialNumber}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      onClick={() =>
+                        disassembleMutation.mutate({
+                          id: unitDetail.id,
+                          childUnitIds: [child.id],
+                        })
+                      }
+                      disabled={disassembleMutation.isPending}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Desensamblar
+                    </Button>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+
+            {unitDetail.missingComponents && unitDetail.missingComponents.length > 0 && (
+              <Box>
+                <Typography variant="body2" className="font-semibold text-amber-700 mb-1">
+                  Componentes requeridos faltantes:
+                </Typography>
+                {unitDetail.missingComponents.map((comp) => (
+                  <Paper
+                    key={comp.childItemId}
+                    className="p-2 mb-2 border border-amber-200 bg-amber-50"
+                  >
+                    <Typography variant="body2">
+                      {comp.childItem?.name} (cantidad: {comp.quantity})
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+      </>
+    );
+  } else {
+    detailContent = (
+      <Typography variant="body2" className="text-gray-500">
+        No se pudo cargar el detalle.
+      </Typography>
+    );
+  }
 
   const columns = [
     { field: 'itemName', headerName: 'Ítem' },
@@ -265,32 +465,29 @@ export function InventoryPage() {
     {
       field: 'parentUnit',
       headerName: 'Ensamble',
-      render: (value, row) => {
-        if (value) {
-          return (
+      render: (value, row) => (
+        <Box component="span">
+          {value ? (
             <Chip
               size="small"
               label={`Dentro de ${value.item?.name || 'unidad'}`}
               sx={{ backgroundColor: '#E3F2FD', color: '#1565C0', fontWeight: 600 }}
             />
-          );
-        }
-        if (row.itemHasComponents) {
-          return (
+          ) : row.itemHasComponents ? (
             <Chip
               size="small"
               label="Puede ensamblar"
               sx={{ backgroundColor: '#E8F5E9', color: '#007A3D', fontWeight: 600 }}
             />
-          );
-        }
-        return '-';
-      },
+          ) : (
+            '-'
+          )}
+        </Box>
+      ),
     },
   ];
 
   const isLoading = inventoryLoading || itemsLoading || environmentsLoading;
-
   return (
     <PageContainer title="Gestión de inventario" breadcrumbs={breadcrumbs}>
       <Box className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
@@ -425,16 +622,7 @@ export function InventoryPage() {
             >
               <EditIcon fontSize="small" />
             </IconButton>
-            {row.status !== 'DISPOSED' && (
-              <IconButton
-                size="small"
-                onClick={() => setRetireTarget(row)}
-                aria-label="Dar de baja"
-                className="text-amber-600 hover:text-amber-800"
-              >
-                <ArchiveIcon fontSize="small" />
-              </IconButton>
-            )}
+            {renderStatusAction(row)}
             <IconButton
               size="small"
               onClick={() => setDeleteTarget(row)}
@@ -459,8 +647,9 @@ export function InventoryPage() {
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Eliminar unidad"
-        message={`¿Estás seguro de eliminar esta unidad de inventario? Esta acción no se puede deshacer.`}
+        title="Eliminar permanentemente"
+        message={`¿Estás seguro de eliminar permanentemente esta unidad de inventario? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
         loading={deleteMutation.isPending}
@@ -478,6 +667,17 @@ export function InventoryPage() {
         confirmColor="warning"
       />
 
+      <ConfirmDialog
+        open={Boolean(restoreTarget)}
+        title="Restablecer unidad"
+        message={`¿Estás seguro de restablecer la unidad con serial ${restoreTarget?.serialNumber || ''}?`}
+        confirmText="Restablecer"
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setRestoreTarget(null)}
+        loading={restoreMutation.isPending}
+        confirmColor="primary"
+      />
+
       <Toast
         open={toast.open}
         message={toast.message}
@@ -493,131 +693,7 @@ export function InventoryPage() {
         PaperProps={{ className: 'rounded-xl', sx: { backgroundColor: '#ffffff' } }}
       >
         <DialogTitle className="font-bold text-sena-black">Detalle de unidad</DialogTitle>
-        <DialogContent className="space-y-4">
-          {unitDetailLoading ? (
-            <Box className="space-y-2">
-              <Skeleton variant="text" />
-              <Skeleton variant="text" />
-            </Box>
-          ) : unitDetail ? (
-            <>
-              <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TextField
-                  label="Ítem"
-                  value={unitDetail.item?.name || ''}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Serial"
-                  value={unitDetail.serialNumber || ''}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Ambiente"
-                  value={unitDetail.environment?.name || '-'}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Estado"
-                  value={unitDetail.status || ''}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-              </Box>
-
-              {unitDetail.parentUnit && (
-                <Alert severity="info">
-                  Esta unidad pertenece a{' '}
-                  <strong>
-                    {unitDetail.parentUnit.item?.name} #{unitDetail.parentUnit.serialNumber}
-                  </strong>
-                </Alert>
-              )}
-
-              {unitDetail.itemHasComponents && (
-                <Box>
-                  <Box className="flex items-center gap-2 mb-2">
-                    <Typography variant="subtitle2" className="font-bold">
-                      Estado del ensamble:
-                    </Typography>
-                    {unitDetail.isComplete ? (
-                      <Chip label="Completo" size="small" color="success" />
-                    ) : (
-                      <Chip label="Incompleto" size="small" color="warning" />
-                    )}
-                  </Box>
-
-                  {unitDetail.childUnits && unitDetail.childUnits.length > 0 && (
-                    <Box className="space-y-2 mb-3">
-                      <Typography variant="body2" className="font-semibold">
-                        Componentes ensamblados:
-                      </Typography>
-                      {unitDetail.childUnits.map((child) => (
-                        <Paper
-                          key={child.id}
-                          className="p-2 flex justify-between items-center border border-gray-100"
-                        >
-                          <Box>
-                            <Typography variant="body2" className="font-medium">
-                              {child.item?.name}
-                            </Typography>
-                            <Typography variant="caption" className="text-gray-500">
-                              Serial: {child.serialNumber}
-                            </Typography>
-                          </Box>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="error"
-                            onClick={() =>
-                              disassembleMutation.mutate({
-                                id: unitDetail.id,
-                                childUnitIds: [child.id],
-                              })
-                            }
-                            disabled={disassembleMutation.isPending}
-                            sx={{ textTransform: 'none' }}
-                          >
-                            Desensamblar
-                          </Button>
-                        </Paper>
-                      ))}
-                    </Box>
-                  )}
-
-                  {unitDetail.missingComponents && unitDetail.missingComponents.length > 0 && (
-                    <Box>
-                      <Typography variant="body2" className="font-semibold text-amber-700 mb-1">
-                        Componentes requeridos faltantes:
-                      </Typography>
-                      {unitDetail.missingComponents.map((comp) => (
-                        <Paper
-                          key={comp.childItemId}
-                          className="p-2 mb-2 border border-amber-200 bg-amber-50"
-                        >
-                          <Typography variant="body2">
-                            {comp.childItem?.name} (cantidad: {comp.quantity})
-                          </Typography>
-                        </Paper>
-                      ))}
-                    </Box>
-                  )}
-                </Box>
-              )}
-            </>
-          ) : (
-            <Typography variant="body2" className="text-gray-500">
-              No se pudo cargar el detalle.
-            </Typography>
-          )}
-        </DialogContent>
+        <DialogContent className="space-y-4">{detailContent}</DialogContent>
         <DialogActions className="px-6 pb-4">
           <Button onClick={() => setDetailUnit(null)} variant="outlined" color="inherit">
             Cerrar
@@ -671,11 +747,7 @@ export function InventoryPage() {
                     <Paper
                       key={child.id}
                       className={`p-3 border cursor-pointer transition-colors ${isSelected ? 'border-sena-green bg-sena-green-light/10' : 'border-gray-100'}`}
-                      onClick={() => {
-                        setSelectedChildUnits((prev) =>
-                          isSelected ? prev.filter((id) => id !== child.id) : [...prev, child.id]
-                        );
-                      }}
+                      onClick={() => handleChildUnitToggle(child.id, isSelected)}
                     >
                       <Box className="flex items-center gap-2">
                         <Checkbox checked={isSelected} />
@@ -744,6 +816,7 @@ function InventoryFormDialog({
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
@@ -752,7 +825,16 @@ function InventoryFormDialog({
 
   useEffect(() => {
     if (open) {
-      reset(initialData ? { ...emptyValues, ...initialData } : emptyValues);
+      reset(
+        initialData
+          ? {
+              ...emptyValues,
+              ...initialData,
+              itemId: String(initialData.itemId ?? ''),
+              environmentId: String(initialData.environmentId ?? ''),
+            }
+          : emptyValues
+      );
     }
   }, [open, initialData, reset]);
 
@@ -776,37 +858,51 @@ function InventoryFormDialog({
       </DialogTitle>
       <form onSubmit={handleSubmit(onSubmit)}>
         <DialogContent className="space-y-4">
-          <TextField
-            {...register('itemId')}
-            select
-            label="Ítem"
-            fullWidth
-            size="small"
-            error={!!errors.itemId}
-            helperText={errors.itemId?.message}
-            disabled={isEditing}
-          >
-            {items.map((item) => (
-              <MenuItem key={item.id} value={item.id}>
-                {item.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            {...register('environmentId')}
-            select
-            label="Ambiente"
-            fullWidth
-            size="small"
-            error={!!errors.environmentId}
-            helperText={errors.environmentId?.message}
-          >
-            {environments.map((env) => (
-              <MenuItem key={env.id} value={env.id}>
-                {env.name}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Controller
+            name="itemId"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                label="Ítem"
+                fullWidth
+                size="small"
+                value={field.value ?? ''}
+                error={!!errors.itemId}
+                helperText={errors.itemId?.message}
+                disabled={isEditing}
+              >
+                {items.map((item) => (
+                  <MenuItem key={item.id} value={String(item.id)}>
+                    {item.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
+          <Controller
+            name="environmentId"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                label="Ambiente"
+                fullWidth
+                size="small"
+                value={field.value ?? ''}
+                error={!!errors.environmentId}
+                helperText={errors.environmentId?.message}
+              >
+                {environments.map((env) => (
+                  <MenuItem key={env.id} value={String(env.id)}>
+                    {env.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
           <TextField
             {...register('serialNumber')}
             label="Número de serial (opcional)"
@@ -815,37 +911,51 @@ function InventoryFormDialog({
             error={!!errors.serialNumber}
             helperText={errors.serialNumber?.message}
           />
-          <TextField
-            {...register('physicalState')}
-            select
-            label="Estado físico"
-            fullWidth
-            size="small"
-            error={!!errors.physicalState}
-            helperText={errors.physicalState?.message}
-          >
-            {PHYSICAL_STATE_OPTIONS.map((state) => (
-              <MenuItem key={state.value} value={state.value}>
-                {state.label}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Controller
+            name="physicalState"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                label="Estado físico"
+                fullWidth
+                size="small"
+                value={field.value ?? ''}
+                error={!!errors.physicalState}
+                helperText={errors.physicalState?.message}
+              >
+                {PHYSICAL_STATE_OPTIONS.map((state) => (
+                  <MenuItem key={state.value} value={state.value}>
+                    {state.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
           {isEditing && (
-            <TextField
-              {...register('status')}
-              select
-              label="Estado"
-              fullWidth
-              size="small"
-              error={!!errors.status}
-              helperText={errors.status?.message}
-            >
-              {INVENTORY_STATUS_OPTIONS.map((status) => (
-                <MenuItem key={status.value} value={status.value}>
-                  {status.label}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Controller
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Estado"
+                  fullWidth
+                  size="small"
+                  value={field.value ?? ''}
+                  error={!!errors.status}
+                  helperText={errors.status?.message}
+                >
+                  {INVENTORY_STATUS_OPTIONS.map((status) => (
+                    <MenuItem key={status.value} value={status.value}>
+                      {status.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
           )}
         </DialogContent>
         <DialogActions className="px-6 pb-4">

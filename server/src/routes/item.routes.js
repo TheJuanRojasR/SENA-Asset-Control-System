@@ -25,5 +25,6 @@ router.put(
   itemController.update
 );
 router.delete('/:id', authorize('ADMIN'), validateRequest(itemIdParamSchema), itemController.remove);
+router.delete('/:id/hard', authorize('ADMIN'), validateRequest(itemIdParamSchema), itemController.hardRemove);
 
 export default router;

@@ -27,7 +27,7 @@ export function DataTable({
   totalRows = 0,
   onPageChange,
   onEdit,
-  onDelete,
+  onHardDelete,
   onRetire,
   renderActions,
   actions = true,
@@ -135,17 +135,18 @@ export function DataTable({
                             <IconButton
                               size="small"
                               onClick={() => onRetire(row)}
-                              aria-label="Dar de baja"
-                              className="text-amber-600 hover:text-amber-800"
+                              aria-label={row?.isActive === false ? 'Activar' : 'Dar de baja'}
+                              title={row?.isActive === false ? 'Activar' : 'Dar de baja'}
+                              className={row?.isActive === false ? 'text-green-600 hover:text-green-800' : 'text-amber-600 hover:text-amber-800'}
                             >
                               <ArchiveIcon fontSize="small" />
                             </IconButton>
                           )}
-                          {onDelete && (
+                          {onHardDelete && (
                             <IconButton
                               size="small"
-                              onClick={() => onDelete(row)}
-                              aria-label="Eliminar"
+                              onClick={() => onHardDelete(row)}
+                              aria-label="Eliminar permanentemente"
                               className="text-red-500 hover:text-red-700"
                             >
                               <DeleteIcon fontSize="small" />

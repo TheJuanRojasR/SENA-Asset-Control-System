@@ -16,6 +16,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore.js';
+import LogoUrl from '../../assets/SENA_SENA BLANCO.png';
 import { useCartStore, selectTotalItems } from '../../stores/cartStore.js';
 import { Logo } from './Logo.jsx';
 import { MiniCartDrawer } from './MiniCartDrawer.jsx';
@@ -53,7 +54,7 @@ export function Navbar({ onMenuToggle }) {
           >
             <MenuIcon />
           </IconButton>
-          <Logo className="h-10" />
+          <img src={LogoUrl} alt="Logo SENA" className="h-10" />
           <Typography variant="h6" component="div" className="hidden sm:block font-bold">
             Inventario SENA
           </Typography>
