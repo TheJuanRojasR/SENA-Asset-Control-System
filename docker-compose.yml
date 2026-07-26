@@ -46,6 +46,7 @@ services:
       - /app/node_modules
     command: >
       sh -c "
+        npm install &&
         npx prisma generate &&
         export DATABASE_URL=$$MIGRATE_DATABASE_URL &&
         npx prisma migrate deploy &&

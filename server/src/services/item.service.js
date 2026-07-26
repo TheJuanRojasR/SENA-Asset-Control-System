@@ -261,6 +261,8 @@ async function reconcileInitialQty(tx, { itemId, code, targetQty }) {
   });
 
   await tx.inventoryUnit.createMany({ data: newUnits });
+}
+
 /**
  * Enriquece un ítem con su disponibilidad efectiva.
  * Ítems simples: { stock, available }.
