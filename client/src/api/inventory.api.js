@@ -7,6 +7,7 @@ export const inventoryApi = {
   create: (data) => apiClient.post('/inventory', data),
   update: (id, data) => apiClient.put(`/inventory/${id}`, data),
   remove: (id) => apiClient.delete(`/inventory/${id}`),
+  hardRemove: (id) => apiClient.delete(`/inventory/${id}/hard`),
   assemble: (id, childUnitIds) => apiClient.post(`/inventory/${id}/assemble`, { childUnitIds }),
   disassemble: (id, childUnitIds) =>
     apiClient.post(`/inventory/${id}/disassemble`, { childUnitIds }),

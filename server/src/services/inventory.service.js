@@ -15,7 +15,11 @@ export const inventoryService = {
     if (data.environmentId) {
       const environment = await environmentRepository.findById(data.environmentId);
       if (!environment) {
-        throw new AppError('Ambiente no encontrado', HTTP_STATUS.NOT_FOUND, 'ENVIRONMENT_NOT_FOUND');
+        throw new AppError(
+          'Ambiente no encontrado',
+          HTTP_STATUS.NOT_FOUND,
+          'ENVIRONMENT_NOT_FOUND'
+        );
       }
     }
 
@@ -72,7 +76,11 @@ export const inventoryService = {
     if (data.environmentId) {
       const environment = await environmentRepository.findById(data.environmentId);
       if (!environment) {
-        throw new AppError('Ambiente no encontrado', HTTP_STATUS.NOT_FOUND, 'ENVIRONMENT_NOT_FOUND');
+        throw new AppError(
+          'Ambiente no encontrado',
+          HTTP_STATUS.NOT_FOUND,
+          'ENVIRONMENT_NOT_FOUND'
+        );
       }
     }
 
@@ -96,6 +104,16 @@ export const inventoryService = {
 
     const unit = await inventoryRepository.update(id, { status: 'DISPOSED' });
     return { unit, message: 'Unidad dada de baja correctamente' };
+  },
+
+  async hardDeleteInventoryUnit(id) {
+    const existing = await inventoryRepository.findById(id);
+    if (!existing) {
+      throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
+    }
+
+    await inventoryRepository.hardDelete(id);
+    return { id };
   },
 
   async getLowStockItems() {
@@ -133,7 +151,11 @@ export const inventoryService = {
       });
 
       if (children.length !== childUnitIds.length) {
-        throw new AppError('Una o más unidades hijas no existen', HTTP_STATUS.NOT_FOUND, 'CHILDREN_NOT_FOUND');
+        throw new AppError(
+          'Una o más unidades hijas no existen',
+          HTTP_STATUS.NOT_FOUND,
+          'CHILDREN_NOT_FOUND'
+        );
       }
 
       for (const child of children) {
@@ -200,7 +222,11 @@ export const inventoryService = {
       });
 
       if (children.length !== childUnitIds.length) {
-        throw new AppError('Una o más unidades no pertenecen a este ensamble', HTTP_STATUS.BAD_REQUEST, 'INVALID_DISASSEMBLY');
+        throw new AppError(
+          'Una o más unidades no pertenecen a este ensamble',
+          HTTP_STATUS.BAD_REQUEST,
+          'INVALID_DISASSEMBLY'
+        );
       }
 
       await Promise.all(

@@ -143,10 +143,10 @@ export function InventoryPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => inventoryApi.remove(id),
+    mutationFn: (id) => inventoryApi.hardRemove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      showToast('Unidad eliminada correctamente', 'success');
+      showToast('Unidad eliminada permanentemente', 'success');
       setDeleteTarget(null);
     },
     onError: (error) => {
@@ -465,8 +465,9 @@ export function InventoryPage() {
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Eliminar unidad"
-        message={`¿Estás seguro de eliminar esta unidad de inventario? Esta acción no se puede deshacer.`}
+        title="Eliminar permanentemente"
+        message={`¿Estás seguro de eliminar permanentemente esta unidad de inventario? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
         loading={deleteMutation.isPending}

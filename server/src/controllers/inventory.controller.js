@@ -40,6 +40,11 @@ export const inventoryController = {
     successResponse(res, result, result.message);
   }),
 
+  hardRemove: asyncHandler(async (req, res) => {
+    const result = await inventoryService.hardDeleteInventoryUnit(Number(req.params.id));
+    successResponse(res, result, 'Unidad eliminada permanentemente');
+  }),
+
   lowStock: asyncHandler(async (_req, res) => {
     const result = await inventoryService.getLowStockItems();
     successResponse(res, result);
