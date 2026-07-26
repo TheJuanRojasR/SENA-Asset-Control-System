@@ -299,6 +299,151 @@ export function InventoryPage() {
     );
   };
 
+  const handleChildUnitToggle = (childId, isSelected) => {
+    setSelectedChildUnits((prev) =>
+      isSelected ? prev.filter((id) => id !== childId) : [...prev, childId]
+    );
+  };
+
+  let detailContent = null;
+  let assemblyStatusChip = null;
+
+  if (unitDetail?.isComplete) {
+    assemblyStatusChip = <Chip label="Completo" size="small" color="success" />;
+  } else if (unitDetail) {
+    assemblyStatusChip = <Chip label="Incompleto" size="small" color="warning" />;
+  }
+
+  if (unitDetailLoading) {
+    detailContent = (
+      <Box className="space-y-2">
+        <Skeleton variant="text" />
+        <Skeleton variant="text" />
+      </Box>
+    );
+  } else if (unitDetail) {
+    detailContent = (
+      <>
+        <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TextField
+            label="Ítem"
+            value={unitDetail.item?.name || ''}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Serial"
+            value={unitDetail.serialNumber || ''}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Ambiente"
+            value={unitDetail.environment?.name || '-'}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Estado"
+            value={unitDetail.status || ''}
+            fullWidth
+            size="small"
+            InputProps={{ readOnly: true }}
+            InputLabelProps={{ shrink: true }}
+          />
+        </Box>
+
+        {unitDetail.parentUnit && (
+          <Alert severity="info">
+            Esta unidad pertenece a{' '}
+            <strong>
+              {unitDetail.parentUnit.item?.name} #{unitDetail.parentUnit.serialNumber}
+            </strong>
+          </Alert>
+        )}
+
+        {unitDetail.itemHasComponents && (
+          <Box>
+            <Box className="flex items-center gap-2 mb-2">
+              <Typography variant="subtitle2" className="font-bold">
+                Estado del ensamble:
+              </Typography>
+              {assemblyStatusChip}
+            </Box>
+
+            {unitDetail.childUnits && unitDetail.childUnits.length > 0 && (
+              <Box className="space-y-2 mb-3">
+                <Typography variant="body2" className="font-semibold">
+                  Componentes ensamblados:
+                </Typography>
+                {unitDetail.childUnits.map((child) => (
+                  <Paper
+                    key={child.id}
+                    className="p-2 flex justify-between items-center border border-gray-100"
+                  >
+                    <Box>
+                      <Typography variant="body2" className="font-medium">
+                        {child.item?.name}
+                      </Typography>
+                      <Typography variant="caption" className="text-gray-500">
+                        Serial: {child.serialNumber}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      onClick={() =>
+                        disassembleMutation.mutate({
+                          id: unitDetail.id,
+                          childUnitIds: [child.id],
+                        })
+                      }
+                      disabled={disassembleMutation.isPending}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Desensamblar
+                    </Button>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+
+            {unitDetail.missingComponents && unitDetail.missingComponents.length > 0 && (
+              <Box>
+                <Typography variant="body2" className="font-semibold text-amber-700 mb-1">
+                  Componentes requeridos faltantes:
+                </Typography>
+                {unitDetail.missingComponents.map((comp) => (
+                  <Paper
+                    key={comp.childItemId}
+                    className="p-2 mb-2 border border-amber-200 bg-amber-50"
+                  >
+                    <Typography variant="body2">
+                      {comp.childItem?.name} (cantidad: {comp.quantity})
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+      </>
+    );
+  } else {
+    detailContent = (
+      <Typography variant="body2" className="text-gray-500">
+        No se pudo cargar el detalle.
+      </Typography>
+    );
+  }
+
   const columns = [
     { field: 'itemName', headerName: 'Ítem' },
     { field: 'environmentName', headerName: 'Ambiente' },
@@ -316,27 +461,25 @@ export function InventoryPage() {
     {
       field: 'parentUnit',
       headerName: 'Ensamble',
-      render: (value, row) => {
-        if (value) {
-          return (
+      render: (value, row) => (
+        <Box component="span">
+          {value ? (
             <Chip
               size="small"
               label={`Dentro de ${value.item?.name || 'unidad'}`}
               sx={{ backgroundColor: '#E3F2FD', color: '#1565C0', fontWeight: 600 }}
             />
-          );
-        }
-        if (row.itemHasComponents) {
-          return (
+          ) : row.itemHasComponents ? (
             <Chip
               size="small"
               label="Puede ensamblar"
               sx={{ backgroundColor: '#E8F5E9', color: '#007A3D', fontWeight: 600 }}
             />
-          );
-        }
-        return '-';
-      },
+          ) : (
+            '-'
+          )}
+        </Box>
+      ),
     },
   ];
 
@@ -546,131 +689,7 @@ export function InventoryPage() {
         PaperProps={{ className: 'rounded-xl', sx: { backgroundColor: '#ffffff' } }}
       >
         <DialogTitle className="font-bold text-sena-black">Detalle de unidad</DialogTitle>
-        <DialogContent className="space-y-4">
-          {unitDetailLoading ? (
-            <Box className="space-y-2">
-              <Skeleton variant="text" />
-              <Skeleton variant="text" />
-            </Box>
-          ) : unitDetail ? (
-            <>
-              <Box className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TextField
-                  label="Ítem"
-                  value={unitDetail.item?.name || ''}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Serial"
-                  value={unitDetail.serialNumber || ''}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Ambiente"
-                  value={unitDetail.environment?.name || '-'}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Estado"
-                  value={unitDetail.status || ''}
-                  fullWidth
-                  size="small"
-                  InputProps={{ readOnly: true }}
-                />
-              </Box>
-
-              {unitDetail.parentUnit && (
-                <Alert severity="info">
-                  Esta unidad pertenece a{' '}
-                  <strong>
-                    {unitDetail.parentUnit.item?.name} #{unitDetail.parentUnit.serialNumber}
-                  </strong>
-                </Alert>
-              )}
-
-              {unitDetail.itemHasComponents && (
-                <Box>
-                  <Box className="flex items-center gap-2 mb-2">
-                    <Typography variant="subtitle2" className="font-bold">
-                      Estado del ensamble:
-                    </Typography>
-                    {unitDetail.isComplete ? (
-                      <Chip label="Completo" size="small" color="success" />
-                    ) : (
-                      <Chip label="Incompleto" size="small" color="warning" />
-                    )}
-                  </Box>
-
-                  {unitDetail.childUnits && unitDetail.childUnits.length > 0 && (
-                    <Box className="space-y-2 mb-3">
-                      <Typography variant="body2" className="font-semibold">
-                        Componentes ensamblados:
-                      </Typography>
-                      {unitDetail.childUnits.map((child) => (
-                        <Paper
-                          key={child.id}
-                          className="p-2 flex justify-between items-center border border-gray-100"
-                        >
-                          <Box>
-                            <Typography variant="body2" className="font-medium">
-                              {child.item?.name}
-                            </Typography>
-                            <Typography variant="caption" className="text-gray-500">
-                              Serial: {child.serialNumber}
-                            </Typography>
-                          </Box>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="error"
-                            onClick={() =>
-                              disassembleMutation.mutate({
-                                id: unitDetail.id,
-                                childUnitIds: [child.id],
-                              })
-                            }
-                            disabled={disassembleMutation.isPending}
-                            sx={{ textTransform: 'none' }}
-                          >
-                            Desensamblar
-                          </Button>
-                        </Paper>
-                      ))}
-                    </Box>
-                  )}
-
-                  {unitDetail.missingComponents && unitDetail.missingComponents.length > 0 && (
-                    <Box>
-                      <Typography variant="body2" className="font-semibold text-amber-700 mb-1">
-                        Componentes requeridos faltantes:
-                      </Typography>
-                      {unitDetail.missingComponents.map((comp) => (
-                        <Paper
-                          key={comp.childItemId}
-                          className="p-2 mb-2 border border-amber-200 bg-amber-50"
-                        >
-                          <Typography variant="body2">
-                            {comp.childItem?.name} (cantidad: {comp.quantity})
-                          </Typography>
-                        </Paper>
-                      ))}
-                    </Box>
-                  )}
-                </Box>
-              )}
-            </>
-          ) : (
-            <Typography variant="body2" className="text-gray-500">
-              No se pudo cargar el detalle.
-            </Typography>
-          )}
-        </DialogContent>
+        <DialogContent className="space-y-4">{detailContent}</DialogContent>
         <DialogActions className="px-6 pb-4">
           <Button onClick={() => setDetailUnit(null)} variant="outlined" color="inherit">
             Cerrar
@@ -724,11 +743,7 @@ export function InventoryPage() {
                     <Paper
                       key={child.id}
                       className={`p-3 border cursor-pointer transition-colors ${isSelected ? 'border-sena-green bg-sena-green-light/10' : 'border-gray-100'}`}
-                      onClick={() => {
-                        setSelectedChildUnits((prev) =>
-                          isSelected ? prev.filter((id) => id !== child.id) : [...prev, child.id]
-                        );
-                      }}
+                      onClick={() => handleChildUnitToggle(child.id, isSelected)}
                     >
                       <Box className="flex items-center gap-2">
                         <Checkbox checked={isSelected} />

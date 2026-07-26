@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import { useAuthStore } from '../../stores/authStore.js';
+import LogoUrl from '../../assets/SENA_SENA BLANCO.png';
 import { Logo } from './Logo.jsx';
 import { ROLE_LABELS } from '../../constants/roles.js';
 
@@ -44,7 +45,7 @@ export function Navbar({ onMenuToggle }) {
           >
             <MenuIcon />
           </IconButton>
-          <Logo className="h-10" />
+          <img src={LogoUrl} alt="Logo SENA" className="h-10" />
           <Typography variant="h6" component="div" className="hidden sm:block font-bold">
             Inventario SENA
           </Typography>
