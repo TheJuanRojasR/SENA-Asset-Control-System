@@ -10,6 +10,8 @@ const userSelect = {
 
 const requesterSelect = {
   ...userSelect,
+  document: true,
+  phone: true,
   imageUrl: true,
 };
 

@@ -46,12 +46,7 @@ export const itemService = {
       itemRepository.count(filters, { includeInactive }),
     ]);
 
-    const data = await Promise.all(
-      items.map(async (item) => ({
-        ...item,
-        stock: await calculateStock(item),
-      }))
-    );
+    const data = await Promise.all(items.map(withAvailability));
 
     return {
       data,
@@ -70,12 +65,7 @@ export const itemService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    return {
-      item: {
-        ...item,
-        stock: await calculateStock(item),
-      },
-    };
+    return { item: await withAvailability(item) };
   },
 
   async createItem(data) {
@@ -271,4 +261,80 @@ async function reconcileInitialQty(tx, { itemId, code, targetQty }) {
   });
 
   await tx.inventoryUnit.createMany({ data: newUnits });
+/**
+ * Enriquece un ítem con su disponibilidad efectiva.
+ * Ítems simples: { stock, available }.
+ * Ítems compuestos: además { complete, incomplete, incompleteDetails },
+ * indicando cuántas unidades padre disponibles tienen todos sus componentes
+ * requeridos ensamblados y cuáles faltan por unidad.
+ */
+async function withAvailability(item) {
+  const stock = await calculateStock(item);
+  const result = { ...item, stock, available: stock };
+
+  if (!Array.isArray(item.components) || item.components.length === 0) {
+    return result;
+  }
+
+  return { ...result, ...(await calculateCompleteness(item)) };
+}
+
+async function calculateCompleteness(item) {
+  const requiredComponents = item.components.filter((component) => component.isRequired);
+
+  if (requiredComponents.length === 0) {
+    return { complete: item.stock ?? 0, incomplete: 0, incompleteDetails: [] };
+  }
+
+  const parentUnits = await prisma.inventoryUnit.findMany({
+    where: { itemId: item.id, status: 'AVAILABLE' },
+    select: {
+      id: true,
+      serialNumber: true,
+      childUnits: {
+        where: { status: 'AVAILABLE' },
+        select: { itemId: true },
+      },
+    },
+    orderBy: { serialNumber: 'asc' },
+  });
+
+  let complete = 0;
+  const incompleteDetails = [];
+
+  for (const unit of parentUnits) {
+    const missingComponents = [];
+
+    for (const component of requiredComponents) {
+      const assembled = unit.childUnits.filter(
+        (childUnit) => childUnit.itemId === component.childItemId
+      ).length;
+
+      if (assembled < component.quantity) {
+        missingComponents.push({
+          itemId: component.childItemId,
+          itemName: component.childItem?.name ?? `Ítem #${component.childItemId}`,
+          required: component.quantity,
+          assembled,
+          missing: component.quantity - assembled,
+        });
+      }
+    }
+
+    if (missingComponents.length === 0) {
+      complete += 1;
+    } else {
+      incompleteDetails.push({
+        unitId: unit.id,
+        serialNumber: unit.serialNumber,
+        missingComponents,
+      });
+    }
+  }
+
+  return {
+    complete,
+    incomplete: incompleteDetails.length,
+    incompleteDetails,
+  };
 }
