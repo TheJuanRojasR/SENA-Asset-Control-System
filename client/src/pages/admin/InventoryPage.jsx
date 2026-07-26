@@ -351,7 +351,11 @@ export function InventoryPage() {
           />
           <TextField
             label="Estado"
-            value={unitDetail.status || ''}
+            value={
+              INVENTORY_STATUS_OPTIONS.find((s) => s.value === unitDetail.status)?.label ||
+              unitDetail.status ||
+              ''
+            }
             fullWidth
             size="small"
             InputProps={{ readOnly: true }}
