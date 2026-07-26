@@ -32,6 +32,12 @@ router.put(
   validateBody(updateInventorySchema),
   inventoryController.update
 );
+router.post(
+  '/:id/restore',
+  ...writeAccess,
+  validateRequest(inventoryIdParamSchema),
+  inventoryController.restore
+);
 router.delete(
   '/:id/hard',
   ...writeAccess,

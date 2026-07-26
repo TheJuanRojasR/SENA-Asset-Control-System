@@ -106,6 +106,28 @@ export const inventoryService = {
     return { unit, message: 'Unidad dada de baja correctamente' };
   },
 
+  async restoreInventoryUnit(id) {
+    const existing = await inventoryRepository.findById(id);
+    if (!existing) {
+      throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
+    }
+
+    if (existing.status !== 'DISPOSED') {
+      throw new AppError(
+        'Solo se puede restablecer una unidad dada de baja',
+        HTTP_STATUS.CONFLICT,
+        'UNIT_NOT_DISPOSED'
+      );
+    }
+
+    const unit = await inventoryRepository.update(id, {
+      status: 'AVAILABLE',
+      physicalState: existing.physicalState === 'DISPOSED' ? 'GOOD' : existing.physicalState,
+    });
+
+    return { unit, message: 'Unidad restablecida correctamente' };
+  },
+
   async hardDeleteInventoryUnit(id) {
     const existing = await inventoryRepository.findById(id);
     if (!existing) {

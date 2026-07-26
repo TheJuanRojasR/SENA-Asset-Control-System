@@ -344,6 +344,25 @@ describe('Inventory endpoints', () => {
       expect(stillExists.status).toBe('DISPOSED');
     });
 
+    it('debe restablecer una unidad dada de baja', async () => {
+      const unit = await prismaTest.inventoryUnit.create({
+        data: {
+          itemId: item.id,
+          serialNumber: 'LAPTOP-001-004',
+          status: 'DISPOSED',
+          physicalState: 'DISPOSED',
+        },
+      });
+
+      const response = await request(app)
+        .post(`/api/inventory/${unit.id}/restore`)
+        .set('Authorization', authHeader(admin));
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.unit.status).toBe('AVAILABLE');
+      expect(response.body.data.unit.physicalState).toBe('GOOD');
+    });
+
     it('debe eliminar permanentemente una unidad como admin', async () => {
       const unit = await prismaTest.inventoryUnit.create({
         data: {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -19,15 +19,16 @@ import {
   Paper,
   Typography,
   Skeleton,
+  IconButton,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArchiveIcon from '@mui/icons-material/Archive';
+import RestoreFromTrashIcon from '@mui/icons-material/RestoreFromTrash';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import BuildIcon from '@mui/icons-material/Build';
-import { IconButton } from '@mui/material';
 import { motion } from 'framer-motion';
 import { PageContainer } from '../../components/ui/PageContainer.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
@@ -77,6 +78,7 @@ export function InventoryPage() {
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [retireTarget, setRetireTarget] = useState(null);
+  const [restoreTarget, setRestoreTarget] = useState(null);
   const [detailUnit, setDetailUnit] = useState(null);
   const [assembleUnit, setAssembleUnit] = useState(null);
   const [selectedChildUnits, setSelectedChildUnits] = useState([]);
@@ -139,6 +141,18 @@ export function InventoryPage() {
     },
     onError: (error) => {
       showToast(error?.response?.data?.message || 'Error al dar de baja la unidad', 'error');
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (id) => inventoryApi.restore(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      showToast('Unidad restablecida correctamente', 'success');
+      setRestoreTarget(null);
+    },
+    onError: (error) => {
+      showToast(error?.response?.data?.message || 'Error al restablecer la unidad', 'error');
     },
   });
 
@@ -253,6 +267,36 @@ export function InventoryPage() {
 
   const handleConfirmRetire = () => {
     if (retireTarget) retireMutation.mutate(retireTarget.id);
+  };
+
+  const handleConfirmRestore = () => {
+    if (restoreTarget) restoreMutation.mutate(restoreTarget.id);
+  };
+
+  const renderStatusAction = (row) => {
+    if (row.status === 'DISPOSED') {
+      return (
+        <IconButton
+          size="small"
+          onClick={() => setRestoreTarget(row)}
+          aria-label="Restablecer unidad"
+          className="text-blue-600 hover:text-blue-800"
+        >
+          <RestoreFromTrashIcon fontSize="small" />
+        </IconButton>
+      );
+    }
+
+    return (
+      <IconButton
+        size="small"
+        onClick={() => setRetireTarget(row)}
+        aria-label="Dar de baja"
+        className="text-amber-600 hover:text-amber-800"
+      >
+        <ArchiveIcon fontSize="small" />
+      </IconButton>
+    );
   };
 
   const columns = [
@@ -431,16 +475,7 @@ export function InventoryPage() {
             >
               <EditIcon fontSize="small" />
             </IconButton>
-            {row.status !== 'DISPOSED' && (
-              <IconButton
-                size="small"
-                onClick={() => setRetireTarget(row)}
-                aria-label="Dar de baja"
-                className="text-amber-600 hover:text-amber-800"
-              >
-                <ArchiveIcon fontSize="small" />
-              </IconButton>
-            )}
+            {renderStatusAction(row)}
             <IconButton
               size="small"
               onClick={() => setDeleteTarget(row)}
@@ -483,6 +518,17 @@ export function InventoryPage() {
         onCancel={() => setRetireTarget(null)}
         loading={retireMutation.isPending}
         confirmColor="warning"
+      />
+
+      <ConfirmDialog
+        open={Boolean(restoreTarget)}
+        title="Restablecer unidad"
+        message={`¿Estás seguro de restablecer la unidad con serial ${restoreTarget?.serialNumber || ''}?`}
+        confirmText="Restablecer"
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setRestoreTarget(null)}
+        loading={restoreMutation.isPending}
+        confirmColor="primary"
       />
 
       <Toast
@@ -751,6 +797,7 @@ function InventoryFormDialog({
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
@@ -792,37 +839,51 @@ function InventoryFormDialog({
       </DialogTitle>
       <form onSubmit={handleSubmit(onSubmit)}>
         <DialogContent className="space-y-4">
-          <TextField
-            {...register('itemId')}
-            select
-            label="Ítem"
-            fullWidth
-            size="small"
-            error={!!errors.itemId}
-            helperText={errors.itemId?.message}
-            disabled={isEditing}
-          >
-            {items.map((item) => (
-              <MenuItem key={item.id} value={String(item.id)}>
-                {item.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            {...register('environmentId')}
-            select
-            label="Ambiente"
-            fullWidth
-            size="small"
-            error={!!errors.environmentId}
-            helperText={errors.environmentId?.message}
-          >
-            {environments.map((env) => (
-              <MenuItem key={env.id} value={String(env.id)}>
-                {env.name}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Controller
+            name="itemId"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                label="Ítem"
+                fullWidth
+                size="small"
+                value={field.value ?? ''}
+                error={!!errors.itemId}
+                helperText={errors.itemId?.message}
+                disabled={isEditing}
+              >
+                {items.map((item) => (
+                  <MenuItem key={item.id} value={String(item.id)}>
+                    {item.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
+          <Controller
+            name="environmentId"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                label="Ambiente"
+                fullWidth
+                size="small"
+                value={field.value ?? ''}
+                error={!!errors.environmentId}
+                helperText={errors.environmentId?.message}
+              >
+                {environments.map((env) => (
+                  <MenuItem key={env.id} value={String(env.id)}>
+                    {env.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
           <TextField
             {...register('serialNumber')}
             label="Número de serial (opcional)"
@@ -831,37 +892,51 @@ function InventoryFormDialog({
             error={!!errors.serialNumber}
             helperText={errors.serialNumber?.message}
           />
-          <TextField
-            {...register('physicalState')}
-            select
-            label="Estado físico"
-            fullWidth
-            size="small"
-            error={!!errors.physicalState}
-            helperText={errors.physicalState?.message}
-          >
-            {PHYSICAL_STATE_OPTIONS.map((state) => (
-              <MenuItem key={state.value} value={state.value}>
-                {state.label}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Controller
+            name="physicalState"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                select
+                label="Estado físico"
+                fullWidth
+                size="small"
+                value={field.value ?? ''}
+                error={!!errors.physicalState}
+                helperText={errors.physicalState?.message}
+              >
+                {PHYSICAL_STATE_OPTIONS.map((state) => (
+                  <MenuItem key={state.value} value={state.value}>
+                    {state.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
           {isEditing && (
-            <TextField
-              {...register('status')}
-              select
-              label="Estado"
-              fullWidth
-              size="small"
-              error={!!errors.status}
-              helperText={errors.status?.message}
-            >
-              {INVENTORY_STATUS_OPTIONS.map((status) => (
-                <MenuItem key={status.value} value={status.value}>
-                  {status.label}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Controller
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Estado"
+                  fullWidth
+                  size="small"
+                  value={field.value ?? ''}
+                  error={!!errors.status}
+                  helperText={errors.status?.message}
+                >
+                  {INVENTORY_STATUS_OPTIONS.map((status) => (
+                    <MenuItem key={status.value} value={status.value}>
+                      {status.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
           )}
         </DialogContent>
         <DialogActions className="px-6 pb-4">
