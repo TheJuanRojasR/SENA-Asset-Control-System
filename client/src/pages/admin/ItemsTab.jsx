@@ -51,18 +51,43 @@ const emptyValues = {
   imageUrl: '',
 };
 
+const initialFilters = {
+  search: '',
+  categoryId: '',
+  unit: '',
+  isActive: '',
+  isConsumable: '',
+};
+
 export function ItemsTab() {
   const queryClient = useQueryClient();
   const { toast, showToast, hideToast } = useToast();
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState(initialFilters);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [softDeleteTarget, setSoftDeleteTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const normalizedFilters = useMemo(() => {
+    const payload = { ...filters };
+    if (!payload.search?.trim()) delete payload.search;
+    else payload.search = payload.search.trim();
+
+    if (payload.categoryId !== '') payload.categoryId = Number(payload.categoryId);
+    else delete payload.categoryId;
+
+    if (!payload.unit) delete payload.unit;
+
+    if (payload.isActive === '') delete payload.isActive;
+
+    if (payload.isConsumable === '') delete payload.isConsumable;
+
+    return payload;
+  }, [filters]);
+
   const { data: items, isLoading: itemsLoading } = useQuery({
-    queryKey: ['items'],
-    queryFn: () => itemsApi.getAll(),
+    queryKey: ['items', normalizedFilters],
+    queryFn: () => itemsApi.getAll(normalizedFilters),
     select: extractListData,
   });
 
@@ -71,6 +96,11 @@ export function ItemsTab() {
     queryFn: () => categoriesApi.getAll(),
     select: extractListData,
   });
+
+  const getDeleteErrorMessage = (error) =>
+    error?.response?.data?.code === 'ITEM_HAS_LOANS'
+      ? 'El ítem está en préstamo y no se puede eliminar.'
+      : error?.response?.data?.message || 'Error al eliminar ítem';
 
   const createMutation = useMutation({
     mutationFn: itemsApi.create,
@@ -103,8 +133,7 @@ export function ItemsTab() {
       showToast('Ítem desactivado correctamente', 'success');
       setSoftDeleteTarget(null);
     },
-    onError: (error) =>
-      showToast(error?.response?.data?.message || 'Error al desactivar ítem', 'error'),
+    onError: (error) => showToast(getDeleteErrorMessage(error), 'error'),
   });
 
   const hardDeleteMutation = useMutation({
@@ -114,31 +143,18 @@ export function ItemsTab() {
       showToast('Ítem eliminado permanentemente', 'success');
       setDeleteTarget(null);
     },
-    onError: (error) =>
-      showToast(error?.response?.data?.message || 'Error al eliminar ítem', 'error'),
+    onError: (error) => showToast(getDeleteErrorMessage(error), 'error'),
   });
 
   const safeItems = useMemo(() => (Array.isArray(items) ? items : []), [items]);
   const safeCategories = useMemo(() => (Array.isArray(categories) ? categories : []), [categories]);
-
-  const filteredItems = useMemo(() => {
-    if (!search.trim()) return safeItems;
-    const term = search.toLowerCase();
-    return safeItems.filter(
-      (i) =>
-        i.code?.toLowerCase().includes(term) ||
-        i.name?.toLowerCase().includes(term) ||
-        i.description?.toLowerCase().includes(term)
-    );
-  }, [safeItems, search]);
-
-  const handleOpenCreate = () => {
-    setEditing(null);
+  const handleOpenEdit = (item) => {
+    setEditing(item);
     setDialogOpen(true);
   };
 
-  const handleOpenEdit = (item) => {
-    setEditing(item);
+  const handleOpenCreate = () => {
+    setEditing(null);
     setDialogOpen(true);
   };
 
@@ -152,6 +168,7 @@ export function ItemsTab() {
       ...data,
       imageUrl: data.imageUrl || undefined,
     };
+
     if (editing) {
       updateMutation.mutate({ id: editing.id, data: payload });
     } else {
@@ -220,12 +237,12 @@ export function ItemsTab() {
 
   return (
     <Box>
-      <Box className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+      <Box className="flex flex-col lg:flex-row gap-2 mb-6">
         <TextField
           placeholder="Buscar ítem..."
           size="small"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={filters.search}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -233,8 +250,71 @@ export function ItemsTab() {
               </InputAdornment>
             ),
           }}
-          className="w-full md:w-80 bg-white"
+          className="w-full lg:w-72 bg-white"
         />
+
+        <TextField
+          select
+          label="Categoría"
+          size="small"
+          value={filters.categoryId}
+          onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
+          className="w-full lg:w-44 bg-white"
+        >
+          <MenuItem value="">Todas</MenuItem>
+          {safeCategories.map((category) => (
+            <MenuItem key={category.id} value={category.id}>
+              {category.name}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          label="Unidad"
+          size="small"
+          value={filters.unit}
+          onChange={(e) => setFilters({ ...filters, unit: e.target.value })}
+          className="w-full lg:w-36 bg-white"
+        >
+          <MenuItem value="">Todas</MenuItem>
+          {UNIT_OPTIONS.map((unit) => (
+            <MenuItem key={unit.value} value={unit.value}>
+              {unit.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          label="Estado"
+          size="small"
+          value={filters.isActive}
+          onChange={(e) => setFilters({ ...filters, isActive: e.target.value })}
+          className="w-full lg:w-36 bg-white"
+        >
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="true">Activo</MenuItem>
+          <MenuItem value="false">Inactivo</MenuItem>
+        </TextField>
+
+        <TextField
+          select
+          label="Consumible"
+          size="small"
+          value={filters.isConsumable}
+          onChange={(e) => setFilters({ ...filters, isConsumable: e.target.value })}
+          className="w-full lg:w-40 bg-white"
+        >
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="true">Sí</MenuItem>
+          <MenuItem value="false">No</MenuItem>
+        </TextField>
+
+        <Button variant="outlined" onClick={() => setFilters(initialFilters)}>
+          Limpiar
+        </Button>
+
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -252,7 +332,7 @@ export function ItemsTab() {
 
       <DataTable
         columns={columns}
-        rows={filteredItems}
+        rows={safeItems}
         loading={itemsLoading}
         emptyMessage="No se encontraron ítems."
         onEdit={handleOpenEdit}

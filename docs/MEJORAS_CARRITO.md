@@ -9,16 +9,16 @@
 
 ## 1. Problemas detectados (antes)
 
-| # | Problema | Impacto |
-|---|----------|---------|
-| 1 | Sin indicador del estado del carrito fuera de `/instructor/carrito` | El usuario no sabía cuántos ítems llevaba |
-| 2 | `CatalogPage` no usaba `select: extractListData` (patrón inconsistente) | Doble extracción manual, código frágil |
-| 3 | El carrito limitaba por `stock` total, pero el backend valida por unidades **disponibles** | Errores 409 `INSUFFICIENT_STOCK` evitables desde la UI |
-| 4 | Catálogo no descontaba lo ya agregado al carrito | Se podía intentar agregar más de lo disponible |
-| 5 | Sin invalidación de caché tras crear una solicitud | Catálogo y "Mis solicitudes" quedaban desactualizados |
-| 6 | Manejo de errores genérico (`error?.response?.data?.message`) | Sin distinción entre red, auth, validación o stock |
-| 7 | `fetch` manual con `useState(submitting)` en vez de `useMutation` | Sin reintentos, sin estados de mutación consistentes |
-| 8 | Stock del carrito podía quedar obsoleto (persist en localStorage) | Solicitudes destinadas a fallar al confirmar |
+| #   | Problema                                                                                   | Impacto                                                |
+| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| 1   | Sin indicador del estado del carrito fuera de `/instructor/carrito`                        | El usuario no sabía cuántos ítems llevaba              |
+| 2   | `CatalogPage` no usaba `select: extractListData` (patrón inconsistente)                    | Doble extracción manual, código frágil                 |
+| 3   | El carrito limitaba por `stock` total, pero el backend valida por unidades **disponibles** | Errores 409 `INSUFFICIENT_STOCK` evitables desde la UI |
+| 4   | Catálogo no descontaba lo ya agregado al carrito                                           | Se podía intentar agregar más de lo disponible         |
+| 5   | Sin invalidación de caché tras crear una solicitud                                         | Catálogo y "Mis solicitudes" quedaban desactualizados  |
+| 6   | Manejo de errores genérico (`error?.response?.data?.message`)                              | Sin distinción entre red, auth, validación o stock     |
+| 7   | `fetch` manual con `useState(submitting)` en vez de `useMutation`                          | Sin reintentos, sin estados de mutación consistentes   |
+| 8   | Stock del carrito podía quedar obsoleto (persist en localStorage)                          | Solicitudes destinadas a fallar al confirmar           |
 
 ---
 
@@ -27,6 +27,7 @@
 ### 2.1 Archivos nuevos
 
 #### `client/src/utils/errorHandler.js`
+
 Normaliza cualquier error (axios, red, desconocido) a `{ type, message, code, status }`.
 
 - `API_ERROR_TYPES`: `network`, `auth`, `forbidden`, `not_found`, `conflict`,
@@ -37,6 +38,7 @@ Normaliza cualquier error (axios, red, desconocido) a `{ type, message, code, st
 - `getApiErrorMessage(error, fallback?)`: atajo que retorna solo el mensaje.
 
 #### `client/src/hooks/useCartValidation.js`
+
 Valida el carrito contra el stock fresco del catálogo **en tiempo real**.
 
 - Reutiliza la query `['items']` (misma clave del catálogo): **comparte caché,
@@ -47,6 +49,7 @@ Valida el carrito contra el stock fresco del catálogo **en tiempo real**.
 - `enabled: false` cuando el carrito está vacío (cero peticiones innecesarias).
 
 #### `client/src/components/common/MiniCartDrawer.jsx`
+
 Vista rápida del carrito (drawer lateral derecho) accesible desde el Navbar:
 
 - Lista con stepper de cantidad (+/−) y eliminar por ítem; operaciones
@@ -59,6 +62,7 @@ Vista rápida del carrito (drawer lateral derecho) accesible desde el Navbar:
 ### 2.2 Archivos modificados
 
 #### `client/src/stores/cartStore.js`
+
 API anterior intacta (los 8 tests originales siguen pasando). Novedades:
 
 - **Disponibilidad efectiva**: `available ?? stock` en todos los límites
@@ -73,16 +77,19 @@ API anterior intacta (los 8 tests originales siguen pasando). Novedades:
   (suscripciones granulares con primitivos, sin re-renders innecesarios).
 
 #### `client/src/components/common/Sidebar.jsx`
+
 - `Badge` de MUI sobre el ítem **Carrito** con el total de unidades
   (selector reactivo, `max={99}`, oculto en cero).
 - Animación "bump" (`key={totalCartItems}` + spring) cada vez que cambia
   el contador. Funciona en modo expandido y colapsado.
 
 #### `client/src/components/common/Navbar.jsx`
+
 - Botón de carrito con `Badge` (solo rol `INSTRUCTOR`) que abre el
   `MiniCartDrawer`. Misma animación "bump" ante cambios.
 
 #### `client/src/pages/instructor/CatalogPage.jsx`
+
 - `select: extractListData` en ambas queries (consistencia con el resto
   de la app).
 - **Disponibilidad neta**: `netAvailable = available − cantidadEnCarrito`;
@@ -93,6 +100,7 @@ API anterior intacta (los 8 tests originales siguen pasando). Novedades:
 - Botón cambia a "Sin stock" cuando `netAvailable` llega a 0.
 
 #### `client/src/pages/instructor/CartPage.jsx`
+
 Reescritura sobre la misma estructura visual:
 
 - **Validación en vivo** con `useCartValidation`.
@@ -117,11 +125,11 @@ Reescritura sobre la misma estructura visual:
 
 ### 2.3 Tests nuevos
 
-| Archivo | Tests | Cubre |
-|---------|-------|-------|
-| `tests/utils/errorHandler.test.js` | 12 | red, códigos de stock, 4xx/5xx, fallback, mensajes vacíos |
-| `tests/stores/cartStore.test.js` (extendido) | +8 | prioridad de `available`, resultado de `addItem`, `syncWithCatalog` (ajuste, eliminación, conservación, entradas inválidas) |
-| `tests/hooks/useCartValidation.test.jsx` | 6 | carrito vacío (sin fetch), stock suficiente/insuficiente, ítem faltante, fallback a `stock`, fallo de API |
+| Archivo                                      | Tests | Cubre                                                                                                                       |
+| -------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- |
+| `tests/utils/errorHandler.test.js`           | 12    | red, códigos de stock, 4xx/5xx, fallback, mensajes vacíos                                                                   |
+| `tests/stores/cartStore.test.js` (extendido) | +8    | prioridad de `available`, resultado de `addItem`, `syncWithCatalog` (ajuste, eliminación, conservación, entradas inválidas) |
+| `tests/hooks/useCartValidation.test.jsx`     | 6     | carrito vacío (sin fetch), stock suficiente/insuficiente, ítem faltante, fallback a `stock`, fallo de API                   |
 
 **Resultado:** 43/43 tests pasando, `eslint` sin errores, `vite build` exitoso.
 
@@ -251,8 +259,13 @@ Catálogo                         Carrito                       API
         "unitId": 93,
         "serialNumber": "TORRE-001",
         "missingComponents": [
-          { "itemId": 8, "itemName": "Procesador Intel Core i5",
-            "required": 1, "assembled": 0, "missing": 1 }
+          {
+            "itemId": 8,
+            "itemName": "Procesador Intel Core i5",
+            "required": 1,
+            "assembled": 0,
+            "missing": 1
+          }
         ]
       }
     ]
@@ -280,15 +293,15 @@ Catálogo                         Carrito                       API
     código modificado en esta iteración.
 - **Tests frontend**: 43/43 ✓ · **Lint** (cliente y server) ✓ · **Build** ✓
 - **E2E contra API + BD reales** (todo verificado y limpiado después):
-  | Flujo | Resultado |
-  |-------|-----------|
-  | Crear solicitud (RAM: stock 3, pide 2) | stock baja a **1** de inmediato |
-  | Segunda solicitud de 5 | **409 INSUFFICIENT_STOCK** ("Disponible: 1") |
-  | Cancelar solicitud PENDING | stock vuelve a **3** |
-  | Rechazar solicitud (admin) | stock restaurado (1→0→**1**) |
-  | Solicitud envejecida 25h + cleanup | `{"cancelledRequests":1,"releasedUnits":2}`, stock restaurado, status `CANCELLED` con motivo automático |
-  | Ciclo completo create→approve→pack→deliver→complete | estados y stock correctos en cada paso |
-  | Torre PC con 1/6 componentes ensamblados | `complete:0, incomplete:1` con los 5 faltantes detallados |
+  | Flujo                                               | Resultado                                                                                               |
+  | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+  | Crear solicitud (RAM: stock 3, pide 2)              | stock baja a **1** de inmediato                                                                         |
+  | Segunda solicitud de 5                              | **409 INSUFFICIENT_STOCK** ("Disponible: 1")                                                            |
+  | Cancelar solicitud PENDING                          | stock vuelve a **3**                                                                                    |
+  | Rechazar solicitud (admin)                          | stock restaurado (1→0→**1**)                                                                            |
+  | Solicitud envejecida 25h + cleanup                  | `{"cancelledRequests":1,"releasedUnits":2}`, stock restaurado, status `CANCELLED` con motivo automático |
+  | Ciclo completo create→approve→pack→deliver→complete | estados y stock correctos en cada paso                                                                  |
+  | Torre PC con 1/6 componentes ensamblados            | `complete:0, incomplete:1` con los 5 faltantes detallados                                               |
 
 ## 10. Flujo de reserva resultante
 
@@ -316,21 +329,23 @@ AUTOMÁTICO (cron cada hora + pasada al arrancar)
 
 ## 11. Causa raíz
 
-| El frontend buscaba | La API retorna | Resultado |
-|---|---|---|
-| `request.requesterName` / `requesterDocument` / `requesterEmail` | `request.requester.fullName` / `.email` (anidado) | Celdas vacías para el admin |
-| `request.environmentName` | `request.environment.name` | Ambiente vacío |
-| `request.items` | `request.requestItems` (con `item.name`, `requestedQty`) | Conteo y tabla de ítems vacíos |
-| Todas las solicitudes | Máx. 20 (paginación por defecto) | Historial truncado (p. ej. instructor con 23 solo veía 20) |
+| El frontend buscaba                                              | La API retorna                                           | Resultado                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------- |
+| `request.requesterName` / `requesterDocument` / `requesterEmail` | `request.requester.fullName` / `.email` (anidado)        | Celdas vacías para el admin                                |
+| `request.environmentName`                                        | `request.environment.name`                               | Ambiente vacío                                             |
+| `request.items`                                                  | `request.requestItems` (con `item.name`, `requestedQty`) | Conteo y tabla de ítems vacíos                             |
+| Todas las solicitudes                                            | Máx. 20 (paginación por defecto)                         | Historial truncado (p. ej. instructor con 23 solo veía 20) |
 
 ## 12. Cambios
 
 ### Backend
+
 - `request.repository.js`: `requesterSelect` ahora incluye `document` y
   `phone` del solicitante (la relación `requester` ya existía; solo faltaban
   campos). Cambio aditivo, sin migración.
 
 ### Frontend
+
 - `utils/api.js`: nuevo helper `fetchAllListPages(requestFn, { limit })` que
   obtiene **todas las páginas** de un endpoint paginado (lee `meta.totalPages`
   y pide las restantes en paralelo). Necesario porque los tabs por estado

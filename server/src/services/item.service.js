@@ -76,7 +76,11 @@ export const itemService = {
 
     const exists = await itemRepository.findByCode(data.code);
     if (exists) {
-      throw new AppError('Ya existe un ítem con ese código', HTTP_STATUS.CONFLICT, 'ITEM_CODE_EXISTS');
+      throw new AppError(
+        'Ya existe un ítem con ese código',
+        HTTP_STATUS.CONFLICT,
+        'ITEM_CODE_EXISTS'
+      );
     }
 
     const { components, ...itemData } = data;
@@ -112,7 +116,11 @@ export const itemService = {
     if (itemData.code) {
       const exists = await itemRepository.findByCode(itemData.code, id);
       if (exists) {
-        throw new AppError('Ya existe un ítem con ese código', HTTP_STATUS.CONFLICT, 'ITEM_CODE_EXISTS');
+        throw new AppError(
+          'Ya existe un ítem con ese código',
+          HTTP_STATUS.CONFLICT,
+          'ITEM_CODE_EXISTS'
+        );
       }
     }
 
@@ -175,13 +183,16 @@ export const itemService = {
 
     const loanedCount = await itemRepository.countLoanedUnits(id);
     if (loanedCount > 0) {
-      throw new AppError( 'No se puede eliminar el item porque tiene unidades en préstamo', HTTP_STATUS.CONFLICT, 'ITEM_HAS_LOANS' );
+      throw new AppError(
+        'No se puede eliminar el item porque tiene unidades en préstamo',
+        HTTP_STATUS.CONFLICT,
+        'ITEM_HAS_LOANS'
+      );
     }
 
     await itemRepository.hardDelete(id);
     return { message: 'Item eliminado permanentemente' };
   },
-
 };
 
 function buildInitialUnits(code, initialQty) {
@@ -213,17 +224,29 @@ async function validateComponents(parentItemId, components) {
   const ids = components.map((c) => c.childItemId);
   const unique = new Set(ids);
   if (unique.size !== ids.length) {
-    throw new AppError('Los componentes no pueden repetirse', HTTP_STATUS.BAD_REQUEST, 'DUPLICATED_COMPONENTS');
+    throw new AppError(
+      'Los componentes no pueden repetirse',
+      HTTP_STATUS.BAD_REQUEST,
+      'DUPLICATED_COMPONENTS'
+    );
   }
 
   for (const component of components) {
     if (parentItemId && component.childItemId === parentItemId) {
-      throw new AppError('Un ítem no puede ser componente de sí mismo', HTTP_STATUS.BAD_REQUEST, 'SELF_COMPONENT');
+      throw new AppError(
+        'Un ítem no puede ser componente de sí mismo',
+        HTTP_STATUS.BAD_REQUEST,
+        'SELF_COMPONENT'
+      );
     }
 
     const child = await itemRepository.findById(component.childItemId);
     if (!child) {
-      throw new AppError(`Ítem componente no encontrado: ${component.childItemId}`, HTTP_STATUS.NOT_FOUND, 'COMPONENT_NOT_FOUND');
+      throw new AppError(
+        `Ítem componente no encontrado: ${component.childItemId}`,
+        HTTP_STATUS.NOT_FOUND,
+        'COMPONENT_NOT_FOUND'
+      );
     }
   }
 }

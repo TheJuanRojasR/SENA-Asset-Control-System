@@ -154,7 +154,7 @@ export function CatalogPage() {
     }
 
     setAddedId(item.id);
-    window.setTimeout(() => setAddedId(null), 600);
+    globalThis.setTimeout(() => setAddedId(null), 600);
   };
 
   const isLoading = itemsLoading || categoriesLoading;

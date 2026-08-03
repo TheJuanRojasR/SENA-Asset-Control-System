@@ -16,14 +16,22 @@ export const requestService = {
     if (environmentId) {
       const environment = await environmentRepository.findById(environmentId);
       if (!environment) {
-        throw new AppError('Ambiente no encontrado', HTTP_STATUS.NOT_FOUND, 'ENVIRONMENT_NOT_FOUND');
+        throw new AppError(
+          'Ambiente no encontrado',
+          HTTP_STATUS.NOT_FOUND,
+          'ENVIRONMENT_NOT_FOUND'
+        );
       }
     }
 
     const itemIds = items.map((i) => i.itemId);
     const uniqueItemIds = new Set(itemIds);
     if (uniqueItemIds.size !== itemIds.length) {
-      throw new AppError('No puede repetir ítems en la solicitud', HTTP_STATUS.BAD_REQUEST, 'DUPLICATED_ITEMS');
+      throw new AppError(
+        'No puede repetir ítems en la solicitud',
+        HTTP_STATUS.BAD_REQUEST,
+        'DUPLICATED_ITEMS'
+      );
     }
 
     return prisma.$transaction(async (tx) => {
@@ -31,7 +39,11 @@ export const requestService = {
       for (const { itemId, requestedQty } of items) {
         const item = await itemRepository.findById(itemId);
         if (!item) {
-          throw new AppError(`Ítem no encontrado: ${itemId}`, HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+          throw new AppError(
+            `Ítem no encontrado: ${itemId}`,
+            HTTP_STATUS.NOT_FOUND,
+            'ITEM_NOT_FOUND'
+          );
         }
 
         const available = await requestRepository.countAvailableUnitsByItemId(itemId, { tx });
@@ -67,7 +79,12 @@ export const requestService = {
 
       // Reserva inmediata: las unidades quedan apartadas desde la creación.
       for (const requestItem of request.requestItems) {
-        await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, requestItem.requestedQty, tx);
+        await assignUnitsToRequestItem(
+          requestItem.id,
+          requestItem.itemId,
+          requestItem.requestedQty,
+          tx
+        );
       }
 
       return { request: await requestRepository.findById(request.id, { tx }) };
@@ -101,7 +118,11 @@ export const requestService = {
     }
 
     if (user.role !== 'ADMIN' && request.requesterId !== user.userId) {
-      throw new AppError('No tiene permisos para ver esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
+      throw new AppError(
+        'No tiene permisos para ver esta solicitud',
+        HTTP_STATUS.FORBIDDEN,
+        'FORBIDDEN'
+      );
     }
 
     return { request };
@@ -115,7 +136,11 @@ export const requestService = {
       }
 
       if (request.status !== 'PENDING') {
-        throw new AppError('Solo se pueden aprobar solicitudes pendientes', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden aprobar solicitudes pendientes',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       await requestRepository.update(
@@ -152,7 +177,11 @@ export const requestService = {
       }
 
       if (request.status !== 'PENDING') {
-        throw new AppError('Solo se pueden rechazar solicitudes pendientes', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden rechazar solicitudes pendientes',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       // Liberar las unidades reservadas al crear la solicitud.
@@ -181,7 +210,11 @@ export const requestService = {
       }
 
       if (request.status !== 'APPROVED') {
-        throw new AppError('Solo se pueden empacar solicitudes aprobadas', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden empacar solicitudes aprobadas',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
@@ -220,7 +253,11 @@ export const requestService = {
       }
 
       if (request.status !== 'PACKED') {
-        throw new AppError('Solo se pueden entregar solicitudes empacadas', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden entregar solicitudes empacadas',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
@@ -353,7 +390,11 @@ export const requestService = {
       }
 
       if (user.role !== 'ADMIN' && request.requesterId !== userId) {
-        throw new AppError('No tiene permisos para cancelar esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
+        throw new AppError(
+          'No tiene permisos para cancelar esta solicitud',
+          HTTP_STATUS.FORBIDDEN,
+          'FORBIDDEN'
+        );
       }
 
       if (!['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {

@@ -41,7 +41,8 @@ export function MyRequestsPage() {
     const stateToast = location.state?.toast;
     if (stateToast?.message) {
       showToast(stateToast.message, stateToast.severity || 'success');
-      window.history.replaceState({}, document.title);
+      const title = globalThis.document?.title ?? '';
+      globalThis.history?.replaceState?.({}, title);
     }
   }, [location.state, showToast]);
 

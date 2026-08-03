@@ -70,10 +70,7 @@ export function CartPage() {
         'info'
       );
     }
-    // syncWithCatalog y showToast son estables; solo re-sincronizar al
-    // recibir datos frescos del catálogo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [freshItems]);
+  }, [freshItems, showToast, syncWithCatalog]);
 
   const safeEnvironments = useMemo(
     () => (Array.isArray(environments) ? environments : []),

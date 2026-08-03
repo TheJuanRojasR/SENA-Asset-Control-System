@@ -70,7 +70,10 @@ export const reservationCleanupService = {
         cancelledRequests += 1;
       } catch (error) {
         // Una solicitud fallida no detiene la limpieza del resto.
-        console.error(`[ReservationCleanup] Error liberando solicitud ${request.id}:`, error.message);
+        console.error(
+          `[ReservationCleanup] Error liberando solicitud ${request.id}:`,
+          error.message
+        );
       }
     }
 

@@ -49,12 +49,12 @@ Monorepo ligero con Docker Compose:
 
 ## 3. Stack tecnológico
 
-| Capa | Tecnología |
-|------|------------|
+| Capa     | Tecnología                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------- |
 | Frontend | React 18, Vite, Material-UI 5, TailwindCSS, Framer Motion, React Query, Zustand, React Hook Form, Zod |
-| Backend | Node.js 20, Express, Prisma ORM, MySQL 8, JWT, Socket.io (preparado), Swagger |
-| Calidad | ESLint, Prettier, Husky, lint-staged, Jest, Vitest, Testing Library |
-| Infra | Docker Compose |
+| Backend  | Node.js 20, Express, Prisma ORM, MySQL 8, JWT, Socket.io (preparado), Swagger                         |
+| Calidad  | ESLint, Prettier, Husky, lint-staged, Jest, Vitest, Testing Library                                   |
+| Infra    | Docker Compose                                                                                        |
 
 ## 4. Cómo levantar el proyecto
 
