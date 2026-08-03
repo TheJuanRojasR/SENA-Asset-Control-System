@@ -34,11 +34,17 @@ export const updateItemSchema = z.object({
 
 export const itemIdParamSchema = z.object({
   id: z.coerce.number().int().positive('ID inválido'),
+  unit: z.string().optional(),
+  isActive: z.enum(['true', 'false']).optional(),
+  isConsumable: z.enum(['true', 'false']).optional(),
 });
 
 export const listItemsQuerySchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().optional(),
+  unit: z.string().optional(),
+  isActive: z.enum(['true', 'false']).optional(),
+  isConsumable: z.enum(['true', 'false']).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });

@@ -154,9 +154,9 @@ export const itemRepository = {
 
   async hardDelete(id) {
     return prisma.$transaction([
-      prisma.inventoryUnit.deleteMany({ where: { itemId: id }}),
+      prisma.inventoryUnit.deleteMany({ where: { itemId: id } }),
       prisma.item.delete({ where: { id } }),
-    ])
+    ]);
   },
 
   async countLoanedUnits(id) {
@@ -204,6 +204,10 @@ export const itemRepository = {
 
 function buildWhere(filters = {}, { includeInactive = true } = {}) {
   const where = {};
+
+  if (filters.unit) where.unit = filters.unit;
+  if (typeof filters.isActive === 'boolean') where.isActive = filters.isActive;
+  if (typeof filters.isConsumable === 'boolean') where.isConsumable = filters.isConsumable;
 
   if (!includeInactive) {
     where.isDeleted = false;
