@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { reservationCleanupService } from './services/reservationCleanup.service.js';
 
 const allowedOrigins = env.CLIENT_URL
   ? env.CLIENT_URL.split(',').map((origin) => origin.trim())
@@ -86,6 +87,8 @@ io.on('connection', (socket) => {
 const PORT = env.PORT;
 
 if (env.NODE_ENV !== 'test') {
+  reservationCleanupService.startScheduler();
+
   httpServer.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
     console.log(`📚 Documentación disponible en http://localhost:${PORT}/api-docs`);

@@ -10,7 +10,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { Toast } from '../../components/ui/Toast.jsx';
 import { useToast } from '../../hooks/useToast.js';
 import { requestsApi } from '../../api/requests.api.js';
-import { extractListData } from '../../utils/api.js';
+import { fetchAllListPages } from '../../utils/api.js';
 import {
   REQUEST_STATUS,
   REQUEST_STATUS_LABELS,
@@ -41,7 +41,8 @@ export function MyRequestsPage() {
     const stateToast = location.state?.toast;
     if (stateToast?.message) {
       showToast(stateToast.message, stateToast.severity || 'success');
-      window.history.replaceState({}, document.title);
+      const title = globalThis.document?.title ?? '';
+      globalThis.history?.replaceState?.({}, title);
     }
   }, [location.state, showToast]);
 
@@ -51,8 +52,9 @@ export function MyRequestsPage() {
     error,
   } = useQuery({
     queryKey: ['my-requests'],
-    queryFn: () => requestsApi.getAll(),
-    select: extractListData,
+    // Historial completo: los tabs filtran en cliente y la paginación por
+    // defecto del backend (20) ocultaría solicitudes antiguas.
+    queryFn: () => fetchAllListPages((params) => requestsApi.getAll(params)),
   });
 
   const cancelMutation = useMutation({
@@ -188,7 +190,8 @@ export function MyRequestsPage() {
                             Fecha: {formatDate(request.createdAt)}
                           </Typography>
                           <Typography variant="body2" className="text-gray-500 mb-3">
-                            Ítems: {Array.isArray(request.items) ? request.items.length : 0}
+                            Ítems:{' '}
+                            {Array.isArray(request.requestItems) ? request.requestItems.length : 0}
                           </Typography>
 
                           {request.status === REQUEST_STATUS.REJECTED &&

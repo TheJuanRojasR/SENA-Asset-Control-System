@@ -49,12 +49,12 @@ Monorepo ligero con Docker Compose:
 
 ## 3. Stack tecnológico
 
-| Capa | Tecnología |
-|------|------------|
+| Capa     | Tecnología                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------- |
 | Frontend | React 18, Vite, Material-UI 5, TailwindCSS, Framer Motion, React Query, Zustand, React Hook Form, Zod |
-| Backend | Node.js 20, Express, Prisma ORM, MySQL 8, JWT, Socket.io (preparado), Swagger |
-| Calidad | ESLint, Prettier, Husky, lint-staged, Jest, Vitest, Testing Library |
-| Infra | Docker Compose |
+| Backend  | Node.js 20, Express, Prisma ORM, MySQL 8, JWT, Socket.io (preparado), Swagger                         |
+| Calidad  | ESLint, Prettier, Husky, lint-staged, Jest, Vitest, Testing Library                                   |
+| Infra    | Docker Compose                                                                                        |
 
 ## 4. Cómo levantar el proyecto
 
@@ -166,6 +166,14 @@ La base de datos de tests es `sena_inventario_test`; los tests de backend la usa
 - Todos los ítems tienen unidades seriadas para trazabilidad.
 - Los ítems compuestos se modelan con `ItemComponent` y `parentUnitId`.
 - Los préstamos reales se registran en `RequestItemUnit` con fechas y estado físico.
+- **Reserva inmediata de stock**: crear una solicitud (PENDING) reserva unidades
+  (`AVAILABLE` → `RESERVED`) en la misma transacción; cancelar/rechazar las libera.
+  Detalle en `docs/MEJORAS_CARRITO.md` (Parte 2).
+- **Expiración de reservas**: `reservationCleanup.service.js` (node-cron, cada hora +
+  pasada al arrancar) cancela solicitudes PENDING con más de 24 h y libera sus
+  unidades. Configurable con `RESERVATION_TIMEOUT_HOURS` y `RESERVATION_CLEANUP_CRON`.
+- La API de ítems retorna `available` y, para compuestos, `complete`/`incomplete`
+  con el detalle de componentes faltantes por unidad.
 - No se envían correos por ahora; se dejó preparado el lugar para un servicio SMTP.
 - CORS acepta `http://localhost:5173` y `http://127.0.0.1:5173` (configurable en `CLIENT_URL`).
 

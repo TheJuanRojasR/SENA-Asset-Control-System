@@ -5,7 +5,7 @@ import apiClient from './client.js';
  */
 export const requestsApi = {
   create: (payload) => apiClient.post('/requests', payload),
-  getAll: () => apiClient.get('/requests'),
+  getAll: (params) => apiClient.get('/requests', { params }),
   getById: (id) => apiClient.get(`/requests/${id}`),
   approve: (id) => apiClient.put(`/requests/${id}/approve`),
   reject: (id, rejectionReason) => apiClient.put(`/requests/${id}/reject`, { rejectionReason }),

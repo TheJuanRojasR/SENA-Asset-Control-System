@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
+  Chip,
   Grid,
   Paper,
   TextField,
@@ -10,19 +11,81 @@ import {
   CircularProgress,
   Alert,
   InputAdornment,
+  Tooltip,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageContainer } from '../../components/ui/PageContainer.jsx';
+import { Toast } from '../../components/ui/Toast.jsx';
+import { useToast } from '../../hooks/useToast.js';
 import { itemsApi } from '../../api/items.api.js';
 import { categoriesApi } from '../../api/categories.api.js';
 import { useCartStore } from '../../stores/cartStore.js';
 import { SENA_COLORS } from '../../constants/theme.js';
 import { extractListData } from '../../utils/api.js';
 
+/**
+ * Badge de completitud para ítems compuestos: verde si todas las unidades
+ * disponibles tienen sus componentes ensamblados, ámbar con detalle de
+ * faltantes si alguna unidad está incompleta.
+ */
+function CompletenessBadge({ item }) {
+  const isComposite = Array.isArray(item.components) && item.components.length > 0;
+  if (!isComposite) return null;
+
+  const incomplete = item.incomplete ?? 0;
+  const details = Array.isArray(item.incompleteDetails) ? item.incompleteDetails : [];
+
+  if (incomplete === 0) {
+    return (
+      <Chip
+        icon={<CheckCircleIcon />}
+        label="Completo"
+        size="small"
+        color="success"
+        sx={{ position: 'absolute', top: 8, left: 8, fontWeight: 700 }}
+      />
+    );
+  }
+
+  const tooltipContent = (
+    <Box className="p-1 max-w-xs">
+      <Typography variant="caption" className="block font-bold mb-1">
+        Componentes faltantes:
+      </Typography>
+      {details.slice(0, 3).map((detail) => (
+        <Typography key={detail.unitId} variant="caption" className="block">
+          {detail.serialNumber}:{' '}
+          {detail.missingComponents
+            .map((mc) => `${mc.itemName} (${mc.assembled}/${mc.required})`)
+            .join(', ')}
+        </Typography>
+      ))}
+      {details.length > 3 && (
+        <Typography variant="caption" className="block text-gray-300">
+          …y {details.length - 3} unidad(es) más
+        </Typography>
+      )}
+    </Box>
+  );
+
+  return (
+    <Tooltip title={tooltipContent} arrow placement="right">
+      <Chip
+        icon={<ReportProblemIcon />}
+        label={`${incomplete} incompleto${incomplete !== 1 ? 's' : ''}`}
+        size="small"
+        color="warning"
+        sx={{ position: 'absolute', top: 8, left: 8, fontWeight: 700, cursor: 'help' }}
+      />
+    </Tooltip>
+  );
+}
 
 export function CatalogPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,25 +93,36 @@ export function CatalogPage() {
   const [quantities, setQuantities] = useState({});
   const [addedId, setAddedId] = useState(null);
   const addItem = useCartStore((state) => state.addItem);
+  const cartItems = useCartStore((state) => state.items);
+  const { toast, showToast, hideToast } = useToast();
 
   const {
-    data: itemsResponse,
+    data: items,
     isLoading: itemsLoading,
     error: itemsError,
   } = useQuery({
     queryKey: ['items'],
     queryFn: () => itemsApi.getAll(),
+    select: extractListData,
   });
 
-  const { data: categoriesResponse, isLoading: categoriesLoading } = useQuery({
+  const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['categories'],
     queryFn: () => categoriesApi.getAll(),
+    select: extractListData,
   });
 
-  const items = extractListData(itemsResponse);
-  const categories = extractListData(categoriesResponse);
+  const safeItems = useMemo(() => (Array.isArray(items) ? items : []), [items]);
+  const safeCategories = useMemo(() => (Array.isArray(categories) ? categories : []), [categories]);
 
-  const filteredItems = items.filter((item) => {
+  // Unidades ya reservadas en el carrito por ítem, para descontar la
+  // disponibilidad mostrada y evitar sobre-agregar.
+  const cartQtyById = useMemo(
+    () => new Map(cartItems.map((cartItem) => [cartItem.id, cartItem.quantity])),
+    [cartItems]
+  );
+
+  const filteredItems = safeItems.filter((item) => {
     const categoryId = item.categoryId || item.category?.id || item.category;
     const matchesCategory = selectedCategory ? categoryId === selectedCategory : true;
 
@@ -64,11 +138,23 @@ export function CatalogPage() {
     setQuantities((prev) => ({ ...prev, [itemId]: qty }));
   };
 
-  const handleAdd = (item) => {
+  const handleAdd = (item, netAvailable) => {
     const qty = quantities[item.id] || 1;
-    addItem(item, qty);
+    const result = addItem(item, Math.min(qty, netAvailable));
+
+    if (!result.added) {
+      showToast(`No hay unidades disponibles de ${item.name}`, 'warning');
+      return;
+    }
+
+    if (result.capped) {
+      showToast(`Solo quedan ${result.maxStock} unidades de ${item.name}`, 'info');
+    } else {
+      showToast(`${item.name} agregado al carrito`, 'success');
+    }
+
     setAddedId(item.id);
-    window.setTimeout(() => setAddedId(null), 600);
+    globalThis.setTimeout(() => setAddedId(null), 600);
   };
 
   const isLoading = itemsLoading || categoriesLoading;
@@ -104,7 +190,7 @@ export function CatalogPage() {
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
               <MenuItem value="">Todas las categorías</MenuItem>
-              {categories.map((category) => (
+              {safeCategories.map((category) => (
                 <MenuItem key={category.id} value={category.id}>
                   {category.name}
                 </MenuItem>
@@ -134,8 +220,9 @@ export function CatalogPage() {
         <Grid container spacing={3}>
           <AnimatePresence>
             {filteredItems.map((item, index) => {
-              const available = item.available ?? item.stock ?? 0;
-              const total = item.stock ?? 0;
+              const available = Math.max(0, Number(item.available ?? item.stock) || 0);
+              const inCart = cartQtyById.get(item.id) ?? 0;
+              const netAvailable = Math.max(0, available - inCart);
               const isAdded = addedId === item.id;
 
               return (
@@ -150,7 +237,7 @@ export function CatalogPage() {
                     className="h-full"
                   >
                     <Paper className="h-full flex flex-col rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                      <Box className="h-40 bg-sena-green-light/30 flex items-center justify-center">
+                      <Box className="h-40 bg-sena-green-light/30 flex items-center justify-center relative">
                         {item.imageUrl ? (
                           <img
                             src={item.imageUrl}
@@ -159,6 +246,21 @@ export function CatalogPage() {
                           />
                         ) : (
                           <InventoryIcon sx={{ fontSize: 64, color: SENA_COLORS.green }} />
+                        )}
+                        <CompletenessBadge item={item} />
+                        {inCart > 0 && (
+                          <Chip
+                            label={`En carrito: ${inCart}`}
+                            size="small"
+                            color="primary"
+                            sx={{
+                              position: 'absolute',
+                              top: 8,
+                              right: 8,
+                              fontWeight: 700,
+                              backgroundColor: SENA_COLORS.green,
+                            }}
+                          />
                         )}
                       </Box>
 
@@ -176,18 +278,26 @@ export function CatalogPage() {
                         <Box className="mt-auto">
                           <Typography variant="body2" className="mb-3">
                             Disponible:{' '}
-                            <strong>
-                              {available} / {total}
+                            <strong style={{ color: netAvailable === 0 ? '#D32F2F' : undefined }}>
+                              {netAvailable}
                             </strong>
+                            {(item.incomplete ?? 0) > 0 && (
+                              <span className="text-amber-600">
+                                {' '}
+                                ({item.complete ?? 0} completo{item.complete !== 1 ? 's' : ''},{' '}
+                                {item.incomplete} incompleto{item.incomplete !== 1 ? 's' : ''})
+                              </span>
+                            )}
                           </Typography>
 
                           <Box className="flex items-center gap-2">
                             <TextField
                               type="number"
                               size="small"
-                              inputProps={{ min: 1, max: total }}
+                              inputProps={{ min: 1, max: Math.max(1, netAvailable) }}
                               value={quantities[item.id] || 1}
                               onChange={(e) => handleQtyChange(item.id, e.target.value)}
+                              disabled={netAvailable === 0}
                               className="w-20"
                             />
                             <motion.div
@@ -201,14 +311,14 @@ export function CatalogPage() {
                                 variant="contained"
                                 size="small"
                                 startIcon={<AddShoppingCartIcon />}
-                                onClick={() => handleAdd(item)}
-                                disabled={total <= 0}
+                                onClick={() => handleAdd(item, netAvailable)}
+                                disabled={netAvailable <= 0}
                                 sx={{
                                   backgroundColor: SENA_COLORS.green,
                                   '&:hover': { backgroundColor: SENA_COLORS.greenDark },
                                 }}
                               >
-                                Agregar
+                                {netAvailable <= 0 ? 'Sin stock' : 'Agregar'}
                               </Button>
                             </motion.div>
                           </Box>
@@ -222,6 +332,13 @@ export function CatalogPage() {
           </AnimatePresence>
         </Grid>
       )}
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        severity={toast.severity}
+        onClose={hideToast}
+      />
     </PageContainer>
   );
 }

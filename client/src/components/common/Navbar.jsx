@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   AppBar,
+  Badge,
   Toolbar,
   Typography,
   IconButton,
@@ -9,16 +10,24 @@ import {
   MenuItem,
   Box,
   Divider,
+  Tooltip,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import { motion } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore.js';
 import LogoUrl from '../../assets/SENA_SENA BLANCO.png';
+import { useCartStore, selectTotalItems } from '../../stores/cartStore.js';
 import { Logo } from './Logo.jsx';
-import { ROLE_LABELS } from '../../constants/roles.js';
+import { MiniCartDrawer } from './MiniCartDrawer.jsx';
+import { ROLE_LABELS, ROLES } from '../../constants/roles.js';
 
 export function Navbar({ onMenuToggle }) {
   const { user, logout } = useAuthStore();
   const [anchorEl, setAnchorEl] = useState(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const totalCartItems = useCartStore(selectTotalItems);
+  const isInstructor = user?.role === ROLES.INSTRUCTOR;
 
   const handleOpen = (event) => setAnchorEl(event.currentTarget);
   const handleClose = () => setAnchorEl(null);
@@ -52,6 +61,28 @@ export function Navbar({ onMenuToggle }) {
         </Box>
 
         <Box className="flex items-center gap-3">
+          {isInstructor && (
+            <Tooltip title="Ver carrito">
+              <IconButton
+                color="inherit"
+                onClick={() => setCartOpen(true)}
+                aria-label={`Abrir carrito, ${totalCartItems} unidades`}
+              >
+                <motion.span
+                  key={totalCartItems}
+                  initial={{ scale: 1.4 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                  style={{ display: 'inline-flex' }}
+                >
+                  <Badge badgeContent={totalCartItems} color="error" max={99} overlap="circular">
+                    <ShoppingCartIcon />
+                  </Badge>
+                </motion.span>
+              </IconButton>
+            </Tooltip>
+          )}
+
           <Typography variant="body2" className="hidden md:block">
             {user?.fullName} — {ROLE_LABELS[user?.role]}
           </Typography>
@@ -78,6 +109,8 @@ export function Navbar({ onMenuToggle }) {
           </Menu>
         </Box>
       </Toolbar>
+
+      {isInstructor && <MiniCartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />}
     </AppBar>
   );
 }

@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
+  Badge,
   Drawer,
   List,
   ListItem,
@@ -11,6 +12,7 @@ import {
   Box,
   IconButton,
 } from '@mui/material';
+import { motion } from 'framer-motion';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import PeopleIcon from '@mui/icons-material/People';
@@ -22,6 +24,7 @@ import MenuOpenIcon from '@mui/icons-material/MenuOpen';
 import AssignmentReturnIcon from '@mui/icons-material/AssignmentReturn';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useAuthStore } from '../../stores/authStore.js';
+import { useCartStore, selectTotalItems } from '../../stores/cartStore.js';
 import { ROLES } from '../../constants/roles.js';
 
 const DRAWER_WIDTH_EXPANDED = 260;
@@ -41,13 +44,14 @@ const instructorMenu = [
   { label: 'Dashboard', path: '/instructor', icon: <DashboardIcon /> },
   { label: 'Catálogo', path: '/instructor/catalogo', icon: <CategoryIcon /> },
   { label: 'Mis Solicitudes', path: '/instructor/solicitudes', icon: <RequestQuoteIcon /> },
-  { label: 'Carrito', path: '/instructor/carrito', icon: <ShoppingCartIcon /> },
+  { label: 'Carrito', path: '/instructor/carrito', icon: <ShoppingCartIcon />, cartBadge: true },
 ];
 
 export function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }) {
   const { user } = useAuthStore();
   const location = useLocation();
   const menu = user?.role === ROLES.ADMIN ? adminMenu : instructorMenu;
+  const totalCartItems = useCartStore(selectTotalItems);
 
   const renderDrawerContent = (isCollapsed) => (
     <Box className="h-full flex flex-col">
@@ -87,7 +91,26 @@ export function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }) {
                       color: isActive ? '#00A94F' : '#555555',
                     }}
                   >
-                    {item.icon}
+                    {item.cartBadge ? (
+                      <motion.span
+                        key={totalCartItems}
+                        initial={{ scale: 1.4 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                        style={{ display: 'inline-flex' }}
+                      >
+                        <Badge
+                          badgeContent={totalCartItems}
+                          color="error"
+                          max={99}
+                          overlap="circular"
+                        >
+                          {item.icon}
+                        </Badge>
+                      </motion.span>
+                    ) : (
+                      item.icon
+                    )}
                   </ListItemIcon>
                 </Tooltip>
                 <ListItemText

@@ -16,51 +16,79 @@ export const requestService = {
     if (environmentId) {
       const environment = await environmentRepository.findById(environmentId);
       if (!environment) {
-        throw new AppError('Ambiente no encontrado', HTTP_STATUS.NOT_FOUND, 'ENVIRONMENT_NOT_FOUND');
+        throw new AppError(
+          'Ambiente no encontrado',
+          HTTP_STATUS.NOT_FOUND,
+          'ENVIRONMENT_NOT_FOUND'
+        );
       }
     }
 
     const itemIds = items.map((i) => i.itemId);
     const uniqueItemIds = new Set(itemIds);
     if (uniqueItemIds.size !== itemIds.length) {
-      throw new AppError('No puede repetir ítems en la solicitud', HTTP_STATUS.BAD_REQUEST, 'DUPLICATED_ITEMS');
+      throw new AppError(
+        'No puede repetir ítems en la solicitud',
+        HTTP_STATUS.BAD_REQUEST,
+        'DUPLICATED_ITEMS'
+      );
     }
 
-    for (const { itemId, requestedQty } of items) {
-      const item = await itemRepository.findById(itemId);
-      if (!item) {
-        throw new AppError(`Ítem no encontrado: ${itemId}`, HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+    return prisma.$transaction(async (tx) => {
+      // Validación y reserva atómicas: evita overbooking entre solicitudes simultáneas.
+      for (const { itemId, requestedQty } of items) {
+        const item = await itemRepository.findById(itemId);
+        if (!item) {
+          throw new AppError(
+            `Ítem no encontrado: ${itemId}`,
+            HTTP_STATUS.NOT_FOUND,
+            'ITEM_NOT_FOUND'
+          );
+        }
+
+        const available = await requestRepository.countAvailableUnitsByItemId(itemId, { tx });
+        if (available < requestedQty) {
+          throw new AppError(
+            `Stock insuficiente para ${item.name}. Disponible: ${available}, solicitado: ${requestedQty}`,
+            HTTP_STATUS.CONFLICT,
+            'INSUFFICIENT_STOCK'
+          );
+        }
       }
 
-      const available = await itemRepository.countAvailableUnits(itemId);
-      if (available < requestedQty) {
-        throw new AppError(
-          `Stock insuficiente para ${item.name}. Disponible: ${available}, solicitado: ${requestedQty}`,
-          HTTP_STATUS.CONFLICT,
-          'INSUFFICIENT_STOCK'
+      const code = await generateRequestCode({ tx });
+
+      const request = await requestRepository.create(
+        {
+          code,
+          requesterId,
+          environmentId,
+          shift,
+          estimatedDate: estimatedDate ? new Date(estimatedDate) : undefined,
+          observations,
+          status: 'PENDING',
+          requestItems: {
+            create: items.map(({ itemId, requestedQty }) => ({
+              itemId,
+              requestedQty,
+            })),
+          },
+        },
+        { tx }
+      );
+
+      // Reserva inmediata: las unidades quedan apartadas desde la creación.
+      for (const requestItem of request.requestItems) {
+        await assignUnitsToRequestItem(
+          requestItem.id,
+          requestItem.itemId,
+          requestItem.requestedQty,
+          tx
         );
       }
-    }
 
-    const code = await generateRequestCode();
-
-    const request = await requestRepository.create({
-      code,
-      requesterId,
-      environmentId,
-      shift,
-      estimatedDate: estimatedDate ? new Date(estimatedDate) : undefined,
-      observations,
-      status: 'PENDING',
-      requestItems: {
-        create: items.map(({ itemId, requestedQty }) => ({
-          itemId,
-          requestedQty,
-        })),
-      },
+      return { request: await requestRepository.findById(request.id, { tx }) };
     });
-
-    return { request };
   },
 
   async listRequests(user, filters, pagination) {
@@ -90,7 +118,11 @@ export const requestService = {
     }
 
     if (user.role !== 'ADMIN' && request.requesterId !== user.userId) {
-      throw new AppError('No tiene permisos para ver esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
+      throw new AppError(
+        'No tiene permisos para ver esta solicitud',
+        HTTP_STATUS.FORBIDDEN,
+        'FORBIDDEN'
+      );
     }
 
     return { request };
@@ -104,7 +136,11 @@ export const requestService = {
       }
 
       if (request.status !== 'PENDING') {
-        throw new AppError('Solo se pueden aprobar solicitudes pendientes', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden aprobar solicitudes pendientes',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       await requestRepository.update(
@@ -141,8 +177,15 @@ export const requestService = {
       }
 
       if (request.status !== 'PENDING') {
-        throw new AppError('Solo se pueden rechazar solicitudes pendientes', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden rechazar solicitudes pendientes',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
+
+      // Liberar las unidades reservadas al crear la solicitud.
+      await releaseAssignedUnits(id, tx);
 
       const updated = await requestRepository.update(
         id,
@@ -167,82 +210,26 @@ export const requestService = {
       }
 
       if (request.status !== 'APPROVED') {
-        throw new AppError('Solo se pueden empacar solicitudes aprobadas', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden empacar solicitudes aprobadas',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
 
-      await Promise.all(
-        requestItems.map(async (requestItem) => {
-          const needed = requestItem.approvedQty ?? requestItem.requestedQty;
-          const components = await itemRepository.findComponents(requestItem.itemId);
+      // Las unidades se reservaron al crear la solicitud. Si falta alguna
+      // (solicitudes anteriores a la reserva inmediata), se asigna aquí como respaldo.
+      for (const requestItem of requestItems) {
+        const needed = requestItem.approvedQty ?? requestItem.requestedQty;
+        const assigned = countAssignedParentUnits(requestItem);
+        const missing = needed - assigned;
 
-          if (components.length > 0) {
-            const parentUnits = await tx.inventoryUnit.findMany({
-              where: { itemId: requestItem.itemId, status: 'AVAILABLE' },
-              take: needed,
-              include: {
-                childUnits: {
-                  where: { status: 'AVAILABLE' },
-                },
-              },
-              orderBy: { id: 'asc' },
-            });
-
-            if (parentUnits.length < needed) {
-              throw new AppError(
-                `Stock insuficiente de unidades padre para el ítem ${requestItem.itemId}`,
-                HTTP_STATUS.CONFLICT,
-                'INSUFFICIENT_STOCK'
-              );
-            }
-
-            await Promise.all(
-              parentUnits.map(async (parentUnit) => {
-                await requestRepository.updateInventoryUnit(parentUnit.id, { status: 'RESERVED' }, { tx });
-                await requestRepository.createRequestItemUnit(
-                  { requestItemId: requestItem.id, inventoryUnitId: parentUnit.id },
-                  { tx }
-                );
-
-                await Promise.all(
-                  parentUnit.childUnits.map(async (childUnit) => {
-                    await requestRepository.updateInventoryUnit(childUnit.id, { status: 'RESERVED' }, { tx });
-                    await requestRepository.createRequestItemUnit(
-                      { requestItemId: requestItem.id, inventoryUnitId: childUnit.id },
-                      { tx }
-                    );
-                  })
-                );
-              })
-            );
-          } else {
-            const availableUnits = await requestRepository.findAvailableUnitsByItemId(
-              requestItem.itemId,
-              needed,
-              { tx }
-            );
-
-            if (availableUnits.length < needed) {
-              throw new AppError(
-                `Stock insuficiente para empacar el ítem ${requestItem.itemId}`,
-                HTTP_STATUS.CONFLICT,
-                'INSUFFICIENT_STOCK'
-              );
-            }
-
-            await Promise.all(
-              availableUnits.map(async (unit) => {
-                await requestRepository.updateInventoryUnit(unit.id, { status: 'RESERVED' }, { tx });
-                await requestRepository.createRequestItemUnit(
-                  { requestItemId: requestItem.id, inventoryUnitId: unit.id },
-                  { tx }
-                );
-              })
-            );
-          }
-        })
-      );
+        if (missing > 0) {
+          await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, missing, tx);
+        }
+      }
 
       await requestRepository.update(
         id,
@@ -266,7 +253,11 @@ export const requestService = {
       }
 
       if (request.status !== 'PACKED') {
-        throw new AppError('Solo se pueden entregar solicitudes empacadas', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden entregar solicitudes empacadas',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
@@ -399,7 +390,11 @@ export const requestService = {
       }
 
       if (user.role !== 'ADMIN' && request.requesterId !== userId) {
-        throw new AppError('No tiene permisos para cancelar esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
+        throw new AppError(
+          'No tiene permisos para cancelar esta solicitud',
+          HTTP_STATUS.FORBIDDEN,
+          'FORBIDDEN'
+        );
       }
 
       if (!['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {
@@ -410,26 +405,8 @@ export const requestService = {
         );
       }
 
-      if (request.status === 'PACKED') {
-        const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
-        const assignedUnits = requestItems.flatMap((item) => item.assignedUnits);
-
-        const unitIdsToUpdate = assignedUnits.map((unit) => unit.inventoryUnitId);
-
-        if (unitIdsToUpdate.length > 0) {
-          await tx.inventoryUnit.updateMany({
-            where: { id: { in: unitIdsToUpdate } },
-            data: { status: 'AVAILABLE' },
-          });
-        }
-
-        const requestItemIds = requestItems.map((item) => item.id);
-        if (requestItemIds.length > 0) {
-          await tx.requestItemUnit.deleteMany({
-            where: { requestItemId: { in: requestItemIds } },
-          });
-        }
-      }
+      // Liberar unidades reservadas en cualquier estado cancelable.
+      await releaseAssignedUnits(id, tx);
 
       const updated = await requestRepository.update(
         id,
@@ -444,11 +421,112 @@ export const requestService = {
   },
 };
 
-async function generateRequestCode() {
+/**
+ * Reserva unidades de inventario para un ítem de solicitud.
+ * Ítems compuestos: reserva unidades padre junto con sus hijos disponibles
+ * (aunque el ensamblaje esté incompleto; la UI muestra el faltante).
+ * Ítems simples: reserva unidades directas.
+ */
+async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx) {
+  if (qty <= 0) return;
+
+  const components = await itemRepository.findComponents(itemId);
+
+  if (components.length > 0) {
+    const parentUnits = await tx.inventoryUnit.findMany({
+      where: { itemId, status: 'AVAILABLE' },
+      take: qty,
+      include: {
+        childUnits: {
+          where: { status: 'AVAILABLE' },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    if (parentUnits.length < qty) {
+      throw new AppError(
+        `Stock insuficiente de unidades para el ítem ${itemId}`,
+        HTTP_STATUS.CONFLICT,
+        'INSUFFICIENT_STOCK'
+      );
+    }
+
+    for (const parentUnit of parentUnits) {
+      await requestRepository.updateInventoryUnit(parentUnit.id, { status: 'RESERVED' }, { tx });
+      await requestRepository.createRequestItemUnit(
+        { requestItemId, inventoryUnitId: parentUnit.id },
+        { tx }
+      );
+
+      for (const childUnit of parentUnit.childUnits) {
+        await requestRepository.updateInventoryUnit(childUnit.id, { status: 'RESERVED' }, { tx });
+        await requestRepository.createRequestItemUnit(
+          { requestItemId, inventoryUnitId: childUnit.id },
+          { tx }
+        );
+      }
+    }
+
+    return;
+  }
+
+  const availableUnits = await requestRepository.findAvailableUnitsByItemId(itemId, qty, { tx });
+
+  if (availableUnits.length < qty) {
+    throw new AppError(
+      `Stock insuficiente para el ítem ${itemId}`,
+      HTTP_STATUS.CONFLICT,
+      'INSUFFICIENT_STOCK'
+    );
+  }
+
+  for (const unit of availableUnits) {
+    await requestRepository.updateInventoryUnit(unit.id, { status: 'RESERVED' }, { tx });
+    await requestRepository.createRequestItemUnit(
+      { requestItemId, inventoryUnitId: unit.id },
+      { tx }
+    );
+  }
+}
+
+/**
+ * Libera todas las unidades asignadas a una solicitud (RESERVED → AVAILABLE)
+ * y elimina las asignaciones. Idempotente: sin asignaciones no hace nada.
+ */
+async function releaseAssignedUnits(requestId, tx) {
+  const requestItems = await requestRepository.findRequestItemsByRequestId(requestId, { tx });
+  const assignedUnits = requestItems.flatMap((item) => item.assignedUnits);
+
+  if (assignedUnits.length === 0) return;
+
+  const unitIds = assignedUnits.map((assignment) => assignment.inventoryUnitId);
+  await tx.inventoryUnit.updateMany({
+    where: { id: { in: unitIds } },
+    data: { status: 'AVAILABLE' },
+  });
+
+  await tx.requestItemUnit.deleteMany({
+    where: { id: { in: assignedUnits.map((assignment) => assignment.id) } },
+  });
+}
+
+/**
+ * Cuenta las unidades padre asignadas a un ítem de solicitud.
+ * En ítems compuestos los hijos también quedan asignados; solo las unidades
+ * del propio ítem cuentan para la cantidad solicitada.
+ */
+function countAssignedParentUnits(requestItem) {
+  return requestItem.assignedUnits.filter(
+    (assignment) => assignment.inventoryUnit?.itemId === requestItem.itemId
+  ).length;
+}
+
+async function generateRequestCode({ tx } = {}) {
   const now = new Date();
   const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = `SOL-${yyyymmdd}-`;
-  const count = await requestRepository.countByCodePrefix(prefix);
+  const count = await requestRepository.countByCodePrefix(prefix, { tx });
   const next = count + 1;
   return `${prefix}${String(next).padStart(3, '0')}`;
 }
