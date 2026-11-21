@@ -16,9 +16,8 @@ import MenuIcon from '@mui/icons-material/Menu';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore.js';
-import LogoUrl from '../../assets/SENA_SENA BLANCO.png';
+import LogoUrl from '../../assets/sena-blanco.png';
 import { useCartStore, selectTotalItems } from '../../stores/cartStore.js';
-import { Logo } from './Logo.jsx';
 import { MiniCartDrawer } from './MiniCartDrawer.jsx';
 import { ROLE_LABELS, ROLES } from '../../constants/roles.js';
 

@@ -4,7 +4,7 @@ Eres un technical writer para el proyecto SENA Inventario. Actualizas README, AD
 
 ## Reglas
 
-- Mantén `docs/PROCESO.md` actualizado con cada fase.
+- Mantén `docs/historia/proceso.md` actualizado con cada fase.
 - Escribe ADRs para decisiones arquitectónicas importantes.
 - Documenta endpoints usando Swagger/OpenAPI.
 - Sé claro, conciso y en español.

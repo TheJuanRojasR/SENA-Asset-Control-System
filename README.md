@@ -16,7 +16,7 @@ El backend está organizado por dominios: rutas, controladores, servicios, repos
 
 Incluye control de acceso por roles, gestión de estados de solicitudes, auditoría de movimientos (`LOAN`, `RETURN`) y documentación Swagger.
 
-📎 La bitácora de construcción se encuentra en: **[/docs/PROCESO.md](./docs/PROCESO.md)**.
+📎 La bitácora de construcción se encuentra en: **[/docs/historia/proceso.md](./docs/historia/proceso.md)**.
 
 ## Estructura del Proyecto
 
@@ -47,8 +47,8 @@ Incluye control de acceso por roles, gestión de estados de solicitudes, auditor
 │   │   └── seeders/        # Seed de datos de prueba
 │   └── tests/              # Tests de integración con Jest
 ├── docs/
-│   ├── PROCESO.md          # Bitácora de construcción
-│   └── Mockup_Sena_Inventario.pdf
+│   ├── historia/           # Bitácora y reportes de bugs (histórico)
+│   └── mockups/            # Material de diseño
 ├── .ai/                    # Orquestador de agentes
 ├── docker-compose.yml
 ├── Makefile
@@ -171,7 +171,7 @@ La base de datos de tests es `sena_inventario_test` y está configurada en `DATA
 
 ## 📖 Documentación
 
-- **Bitácora de construcción**: [`docs/PROCESO.md`](./docs/PROCESO.md)
+- **Bitácora de construcción**: [`docs/historia/proceso.md`](./docs/historia/proceso.md)
 - **Guía para agentes de código**: [`AGENTS.md`](./AGENTS.md)
 - **Guía de contribución**: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 
@@ -194,4 +194,4 @@ Para conocer el flujo de trabajo, convenciones de ramas, estándares de código 
 
 ## 📄 Licencia
 
-Este proyecto está bajo licencia **En revisión** — consulta el archivo `LICENSE` para más detalles.
+Este proyecto está bajo licencia **En revisión**. Todavía no hay un archivo `LICENSE` en el repositorio.

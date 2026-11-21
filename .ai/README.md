@@ -40,7 +40,7 @@ node .ai/orquestador.mjs .ai/tareas/tarea-00-ejemplo.json
 
 3. El script generará un prompt completo que puedes copiar y pegar en tu asistente de IA (por ejemplo, OpenCode, ChatGPT, Claude).
 4. El agente debe devolver archivos, cambios y el comando de verificación.
-5. Registra el resultado en `docs/PROCESO.md`.
+5. Registra el resultado en `docs/historia/proceso.md`.
 
 ## Formato de una tarea
 
@@ -75,4 +75,4 @@ node .ai/orquestador.mjs .ai/tareas/tarea-00-ejemplo.json
 - Proteger rutas con `authenticate` y `authorize`.
 - Escribir tests de integración para endpoints nuevos.
 - No romper la identidad visual del SENA.
-- Documentar cambios en `docs/PROCESO.md`.
+- Documentar cambios en `docs/historia/proceso.md`.

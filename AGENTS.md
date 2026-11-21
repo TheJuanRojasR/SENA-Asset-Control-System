@@ -38,8 +38,9 @@ Monorepo ligero con Docker Compose:
 │   │   └── seeders/        # Seed de datos de prueba
 │   └── tests/              # Tests de integración con Jest
 ├── docs/
-│   ├── PROCESO.md          # Bitácora de construcción
-│   └── Mockup_Sena_Inventario.pdf
+│   ├── user-stories/       # Especificación funcional: 13 documentos
+│   ├── historia/           # Bitácora y reportes de bugs (histórico)
+│   └── mockups/            # Material de diseño
 ├── .ai/                    # Orquestador de agentes
 ├── docker-compose.yml
 ├── Makefile
@@ -163,18 +164,24 @@ La base de datos de tests es `sena_inventario_test`; los tests de backend la usa
 
 ## 9. Notas importantes
 
-- Todos los ítems tienen unidades seriadas para trazabilidad.
+- Los equipos se controlan con unidades seriadas para trazabilidad; los consumibles, por cantidad
+  (`RN-INV-06`).
 - Los ítems compuestos se modelan con `ItemComponent` y `parentUnitId`.
 - Los préstamos reales se registran en `RequestItemUnit` con fechas y estado físico.
-- **Reserva inmediata de stock**: crear una solicitud (PENDING) reserva unidades
-  (`AVAILABLE` → `RESERVED`) en la misma transacción; cancelar/rechazar las libera.
-  Detalle en `docs/MEJORAS_CARRITO.md` (Parte 2).
-- **Expiración de reservas**: `reservationCleanup.service.js` (node-cron, cada hora +
-  pasada al arrancar) cancela solicitudes PENDING con más de 24 h y libera sus
-  unidades. Configurable con `RESERVATION_TIMEOUT_HOURS` y `RESERVATION_CLEANUP_CRON`.
-- La API de ítems retorna `available` y, para compuestos, `complete`/`incomplete`
-  con el detalle de componentes faltantes por unidad.
-- No se envían correos por ahora; se dejó preparado el lugar para un servicio SMTP.
+- **Expiración automática de reservas**: `server/src/services/reservationCleanup.service.js`
+  arranca un `node-cron` desde `app.js` (expresión `0 * * * *` por defecto) y cancela las
+  solicitudes pendientes más antiguas que `RESERVATION_TIMEOUT_HOURS` (24 por defecto). El
+  negocio fija otra regla —2 días con corte a las 23:59, `RN-SOL-07`—, así que ese parámetro
+  está en deuda con la especificación.
+- **Las reglas de negocio no están en este archivo: están en
+  [`docs/user-stories/00-contexto-negocio.md`](docs/user-stories/00-contexto-negocio.md).**
+  Cuando este documento y la especificación difieren, la especificación es la fuente y el
+  código es la deuda; las contradicciones conocidas están registradas en §9 de ese documento.
+- La implementación de cada módulo se especifica en `docs/user-stories/`: autenticación (01),
+  usuarios (02), ambientes (03), ítems (04), inventario (05), solicitudes (06), préstamos (07),
+  catálogo (08), categorías (10), movimientos (11) y paneles (12). El índice está en
+  [`docs/user-stories/README.md`](docs/user-stories/README.md).
+- No se envían correos: no hay servicio de correo configurado (`RN-NOT-02`).
 - CORS acepta `http://localhost:5173` y `http://127.0.0.1:5173` (configurable en `CLIENT_URL`).
 
 ## 10. Contacto / autores
