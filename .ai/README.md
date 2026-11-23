@@ -7,7 +7,9 @@ Esta carpeta contiene la herramienta interna de orquestación de agentes de IA p
 ```
 .ai/
 ├── orquestador.mjs       # Script que lee tareas y genera prompts listos
+├── reparto.md            # Roles, módulos que verifica cada quien y reglas de trabajo
 ├── agentes/              # Prompts base por especialidad
+│   ├── global.prompt.md  # Contexto global: se antepone a cualquier tarea
 │   ├── explore.prompt.md
 │   ├── dba.prompt.md
 │   ├── backend.prompt.md
@@ -22,6 +24,7 @@ Esta carpeta contiene la herramienta interna de orquestación de agentes de IA p
 
 | Agente | Responsabilidad | Ejemplo de tarea |
 |--------|-----------------|------------------|
+| `global` | Contexto del proyecto, del equipo y reglas comunes. **No se invoca como tarea**: el orquestador lo antepone a cualquier agente. | — |
 | `explore` | Explorar el código, mockups o requerimientos y resumir. | "Mapear la página de aprobación de solicitudes del PDF a endpoints y componentes". |
 | `dba` | Diseñar migraciones, índices y seeders. | "Crear modelo de préstamos con seriales". |
 | `backend` | Construir endpoints, servicios y repositorios. | "CRUD de categorías con validación Zod". |
@@ -39,6 +42,8 @@ node .ai/orquestador.mjs .ai/tareas/tarea-00-ejemplo.json
 ```
 
 3. El script generará un prompt completo que puedes copiar y pegar en tu asistente de IA (por ejemplo, OpenCode, ChatGPT, Claude).
+   El prompt sale con `agentes/global.prompt.md` delante del rol que pide la tarea: contexto del
+   sistema, fuente de verdad, equipo, reglas y trampas conocidas.
 4. El agente debe devolver archivos, cambios y el comando de verificación.
 5. Registra el resultado en `docs/historia/proceso.md`.
 

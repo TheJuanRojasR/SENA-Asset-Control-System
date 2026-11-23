@@ -17,6 +17,15 @@ try {
   process.exit(1);
 }
 
+// Contexto global: se antepone a cualquier agente.
+const globalPath = path.resolve('.ai/agentes', 'global.prompt.md');
+let globalPrompt = '';
+try {
+  globalPrompt = readFileSync(globalPath, 'utf-8');
+} catch {
+  globalPrompt = '';
+}
+
 const promptPath = path.resolve('.ai/agentes', `${task.agente}.prompt.md`);
 let basePrompt = '';
 try {
@@ -25,7 +34,7 @@ try {
   basePrompt = readFileSync(path.resolve('.ai/agentes', 'explore.prompt.md'), 'utf-8');
 }
 
-const fullPrompt = `${basePrompt}
+const fullPrompt = `${globalPrompt ? `${globalPrompt}\n\n---\n\n` : ''}${basePrompt}
 
 ---
 
