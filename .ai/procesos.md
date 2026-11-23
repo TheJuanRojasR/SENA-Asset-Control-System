@@ -9,21 +9,37 @@
 La **especificación es la fuente** y **el tablero es la verdad del avance**. Nada se da por hecho
 por lectura del código: un criterio existe cuando su test corre y pasa.
 
-## 1. Facilitación (Scrum Master)
+## 1. Facilitación (sin Scrum Master fijo)
 
 La facilitación es un rol de servicio, no de mando: no decide el alcance ni el diseño, quita
-obstáculos y custodia el proceso.
+obstáculos y custodia el proceso. **Rota cada semana**, en este orden: Juan → Kevin → Julián → Joseph.
 
-**Propuesta: Juan (`@TheJuanRojasR`) como facilitador inicial**, porque ya es dueño del proceso de
-trazabilidad. Rota cada cuatro sprints.
+El seguimiento mecánico no lo hace la persona: lo hace el **agente auditor**
+([`agentes/auditor.prompt.md`](agentes/auditor.prompt.md)), que revisa PRs, WIP y trazabilidad y
+publica el informe en el índice (#81). Quien facilita solo resuelve lo que el auditor marca como
+excepción.
 
-Qué hace:
+Qué hace quien facilita:
 
 - Prepara y modera el planning; mantiene **un objetivo de sprint** por persona.
-- Vigila el WIP y los bloqueos que superan 48 h.
-- Custodia las tablas de trazabilidad: ningún criterio cambia de estado sin test que lo respalde.
+- Cierra los bloqueos que el auditor escala (más de 48 h).
 - Verifica el cierre del sprint contra la definición de terminado (sección 5).
 - Escala cuando una dependencia del grafo no avanza.
+
+### El agente auditor
+
+Corre **el lunes antes del planning** y **el viernes antes de la review**:
+
+```bash
+node .ai/orquestador.mjs .ai/tareas/tarea-auditoria.json
+```
+
+Devuelve un informe con severidad, evidencia, acción y dueño para diez controles: PRs sin revisor,
+PRs sin ids `AC-*` o sin salida de verificación, PRs de más de 400 líneas, PRs parados más de 48 h,
+issues en curso sin rama, WIP mayor que uno, criterios `OK`/`GAP` sin test, trazabilidad tocada por
+quien arregló, épicas sin tomar con dependencias cerradas e issues cerradas sin criterios `OK`.
+
+Nunca modifica nada: ni código, ni trazabilidad, ni PRs. Solo informa.
 
 ## 2. Cadencia
 

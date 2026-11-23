@@ -198,6 +198,8 @@ La base de datos de tests es `sena_inventario_test`; los tests de backend la usa
 - **Prompt global para agentes**: [`.ai/agentes/global.prompt.md`](.ai/agentes/global.prompt.md).
   El orquestador (`.ai/orquestador.mjs`) lo antepone a cualquier tarea, así que el rol de cada
   agente no repite el contexto del sistema.
+- **Auditoría del proceso**: [`.ai/agentes/auditor.prompt.md`](.ai/agentes/auditor.prompt.md), que
+  revisa PRs, WIP y trazabilidad y publica el informe en el índice `#81`. No modifica nada.
 - **Un criterio se marca `OK` o `GAP` solo cuando su test corre**, nunca por lectura de código, y el
   test lleva el id del criterio en el nombre (`it('AC-INV-04-1 …')`).
 - **Nadie certifica lo que arregló**: quien arregla abre o cierra el `DEF-*`, y quien verifica ese
