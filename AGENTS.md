@@ -192,6 +192,9 @@ La base de datos de tests es `sena_inventario_test`; los tests de backend la usa
 - **Reglas de trabajo** —roles, qué módulo verifica cada quien, propiedad de los archivos
   compartidos, definición de terminado de un criterio y regla de independencia—:
   [`.ai/reparto.md`](.ai/reparto.md).
+- **Prompt global para agentes**: [`.ai/agentes/global.prompt.md`](.ai/agentes/global.prompt.md).
+  El orquestador (`.ai/orquestador.mjs`) lo antepone a cualquier tarea, así que el rol de cada
+  agente no repite el contexto del sistema.
 - **Un criterio se marca `OK` o `GAP` solo cuando su test corre**, nunca por lectura de código, y el
   test lleva el id del criterio en el nombre (`it('AC-INV-04-1 …')`).
 - **Nadie certifica lo que arregló**: quien arregla abre o cierra el `DEF-*`, y quien verifica ese
