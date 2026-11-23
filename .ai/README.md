@@ -8,6 +8,7 @@ Esta carpeta contiene la herramienta interna de orquestación de agentes de IA p
 .ai/
 ├── orquestador.mjs       # Script que lee tareas y genera prompts listos
 ├── reparto.md            # Roles, módulos que verifica cada quien y reglas de trabajo
+├── procesos.md           # Cómo se trabaja: sprints, tablero, DoR/DoD, PR y métricas
 ├── agentes/              # Prompts base por especialidad
 │   ├── global.prompt.md  # Contexto global: se antepone a cualquier tarea
 │   ├── explore.prompt.md

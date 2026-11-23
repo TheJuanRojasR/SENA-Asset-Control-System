@@ -186,6 +186,9 @@ La base de datos de tests es `sena_inventario_test`; los tests de backend la usa
 
 ## 10. Reparto del equipo y verificación
 
+- **Procesos del equipo** —cadencia de sprints, tablero, definición de listo y terminado, reglas
+  de PR y métricas—: [`.ai/procesos.md`](.ai/procesos.md).
+
 - **El trabajo vive en las issues de GitHub**, no en este archivo: cada persona filtra por su
   assignee (`gh issue list --assignee @me --state open`) y ahí está el cuerpo completo de la
   historia con sus criterios. El índice de módulos, historias y criterios es el issue `#81`.
