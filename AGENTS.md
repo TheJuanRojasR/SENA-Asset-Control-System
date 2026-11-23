@@ -184,6 +184,21 @@ La base de datos de tests es `sena_inventario_test`; los tests de backend la usa
 - No se envían correos: no hay servicio de correo configurado (`RN-NOT-02`).
 - CORS acepta `http://localhost:5173` y `http://127.0.0.1:5173` (configurable en `CLIENT_URL`).
 
-## 10. Contacto / autores
+## 10. Reparto del equipo y verificación
+
+- **El trabajo vive en las issues de GitHub**, no en este archivo: cada persona filtra por su
+  assignee (`gh issue list --assignee @me --state open`) y ahí está el cuerpo completo de la
+  historia con sus criterios. El índice de módulos, historias y criterios es el issue `#81`.
+- **Reglas de trabajo** —roles, qué módulo verifica cada quien, propiedad de los archivos
+  compartidos, definición de terminado de un criterio y regla de independencia—:
+  [`.ai/reparto.md`](.ai/reparto.md).
+- **Un criterio se marca `OK` o `GAP` solo cuando su test corre**, nunca por lectura de código, y el
+  test lleva el id del criterio en el nombre (`it('AC-INV-04-1 …')`).
+- **Nadie certifica lo que arregló**: quien arregla abre o cierra el `DEF-*`, y quien verifica ese
+  módulo firma el veredicto en la tabla de trazabilidad de `docs/user-stories/`.
+- El orden lo fija el grafo de dependencias de las épicas (`blocked_by`): `01 → 10 · 03 · 02 → 04 →
+  05 → 08 · 06 → 07 → 11 → 12`.
+
+## 11. Contacto / autores
 
 Ver `README.md` y `CONTRIBUTING.md` para más detalles sobre autores y flujo de colaboración.
