@@ -8,8 +8,10 @@ Esta carpeta contiene la herramienta interna de orquestación de agentes de IA p
 .ai/
 ├── orquestador.mjs       # Script que lee tareas y genera prompts listos
 ├── reparto.md            # Roles, módulos que verifica cada quien y reglas de trabajo
+├── procesos.md           # Cómo se trabaja: sprints, tablero, DoR/DoD, PR y métricas
 ├── agentes/              # Prompts base por especialidad
 │   ├── global.prompt.md  # Contexto global: se antepone a cualquier tarea
+│   ├── auditor.prompt.md # Auditoría de proceso: PRs, WIP y trazabilidad
 │   ├── explore.prompt.md
 │   ├── dba.prompt.md
 │   ├── backend.prompt.md
@@ -17,6 +19,7 @@ Esta carpeta contiene la herramienta interna de orquestación de agentes de IA p
 │   ├── qa.prompt.md
 │   └── docs.prompt.md
 └── tareas/               # Tareas concretas a delegar
+    ├── tarea-auditoria.json   # Auditoría periódica del proceso
     └── tarea-*.json
 ```
 
@@ -25,6 +28,7 @@ Esta carpeta contiene la herramienta interna de orquestación de agentes de IA p
 | Agente | Responsabilidad | Ejemplo de tarea |
 |--------|-----------------|------------------|
 | `global` | Contexto del proyecto, del equipo y reglas comunes. **No se invoca como tarea**: el orquestador lo antepone a cualquier agente. | — |
+| `auditor` | Revisa PRs, WIP y trazabilidad contra las reglas. No modifica nada: solo informa. | "Auditar los PRs abiertos antes del sync". |
 | `explore` | Explorar el código, mockups o requerimientos y resumir. | "Mapear la página de aprobación de solicitudes del PDF a endpoints y componentes". |
 | `dba` | Diseñar migraciones, índices y seeders. | "Crear modelo de préstamos con seriales". |
 | `backend` | Construir endpoints, servicios y repositorios. | "CRUD de categorías con validación Zod". |
