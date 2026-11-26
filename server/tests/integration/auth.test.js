@@ -67,4 +67,37 @@ describe('Auth endpoints', () => {
       expect(response.status).toBe(401);
     });
   });
+
+  describe('AC-AUTH-01-5 — Cuenta inactiva', () => {
+    it('AC-AUTH-01-5 — la cuenta inactiva responde idéntico a credenciales inválidas y no emite cookie', async () => {
+      const inactivo = await prismaTest.user.create({
+        data: {
+          email: 'inactivo@sena.edu.co',
+          passwordHash: await bcrypt.hash('AdminSENA2024', 10),
+          fullName: 'Usuario Inactivo',
+          role: 'INSTRUCTOR',
+          shift: 'MORNING',
+          isActive: false,
+        },
+      });
+
+      // AC-AUTH-01-2 / AC-AUTH-01-3: referencia de «credenciales inválidas».
+      const credencialesInvalidas = await request(app).post('/api/auth/login').send({
+        email: 'admin@sena.edu.co',
+        password: 'clave-que-no-es',
+      });
+
+      // AC-AUTH-01-5: cuenta correcta en correo y contraseña, pero desactivada.
+      const cuentaInactiva = await request(app).post('/api/auth/login').send({
+        email: inactivo.email,
+        password: 'AdminSENA2024',
+      });
+
+      expect(credencialesInvalidas.status).toBe(401);
+      expect(cuentaInactiva.status).toBe(401);
+      expect(cuentaInactiva.body).toEqual(credencialesInvalidas.body);
+      expect(cuentaInactiva.body.code).toBe('INVALID_CREDENTIALS');
+      expect(cuentaInactiva.headers['set-cookie']).toBeUndefined();
+    });
+  });
 });

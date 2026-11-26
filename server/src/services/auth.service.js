@@ -24,12 +24,11 @@ export const authService = {
       throw new AppError('Credenciales inválidas', HTTP_STATUS.UNAUTHORIZED, 'INVALID_CREDENTIALS');
     }
 
-    if (!user.isActive) {
-      throw new AppError('Usuario inactivo', HTTP_STATUS.UNAUTHORIZED, 'USER_INACTIVE');
-    }
-
     const isValid = await comparePassword(password, user.passwordHash);
-    if (!isValid) {
+
+    // RN-AUTH-03: una cuenta desactivada se rechaza exactamente igual que una contraseña
+    // incorrecta, para que el intento de acceso no revele que el correo existe.
+    if (!isValid || !user.isActive) {
       throw new AppError('Credenciales inválidas', HTTP_STATUS.UNAUTHORIZED, 'INVALID_CREDENTIALS');
     }
 
