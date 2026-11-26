@@ -201,4 +201,29 @@ describe('Auth endpoints', () => {
       expect(response.body.code).not.toBe('TOKEN_EXPIRED');
     });
   });
+
+  describe('AC-AUTH-04-5 — Cuenta desactivada con token vigente', () => {
+    it('AC-AUTH-04-5 — un token vigente de una cuenta desactivada responde 401', async () => {
+      const login = await request(app).post('/api/auth/login').send({
+        email: 'admin@sena.edu.co',
+        password: 'AdminSENA2024',
+      });
+
+      const tokenVigente = login.body.data.accessToken;
+      expect(login.status).toBe(200);
+
+      // La cuenta se desactiva después de haber obtenido el token.
+      await prismaTest.user.updateMany({
+        where: { email: 'admin@sena.edu.co' },
+        data: { isActive: false },
+      });
+
+      const response = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${tokenVigente}`);
+
+      // La ventana hasta el vencimiento del token no es aceptable (RN-USR-05).
+      expect(response.status).toBe(401);
+    });
+  });
 });
