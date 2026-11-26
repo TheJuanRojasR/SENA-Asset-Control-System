@@ -1,6 +1,8 @@
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { app } from '../../src/app.js';
+import { env } from '../../src/config/env.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
 
 describe('Auth endpoints', () => {
@@ -163,6 +165,40 @@ describe('Auth endpoints', () => {
 
       // AC-AUTH-04-1: el cuerpo no expone la contraseña ni su hash.
       expect(JSON.stringify(me.body)).not.toMatch(/passwordHash|"password"/i);
+    });
+  });
+
+  describe('AC-AUTH-04-4 — Token expirado', () => {
+    it('AC-AUTH-04-4 — un token vencido responde 401 TOKEN_EXPIRED', async () => {
+      const user = await prismaTest.user.findFirst({ where: { email: 'admin@sena.edu.co' } });
+
+      const tokenVencido = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role, fullName: user.fullName },
+        env.JWT_SECRET,
+        { expiresIn: -60 }
+      );
+
+      const response = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${tokenVencido}`);
+
+      // El cliente necesita esta distinción para decidir si renueva la sesión.
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('TOKEN_EXPIRED');
+    });
+
+    it('AC-AUTH-04-3 — un token firmado con otra clave no se confunde con uno vencido', async () => {
+      const tokenFalsificado = jwt.sign(
+        { userId: 1, email: 'admin@sena.edu.co', role: 'ADMIN' },
+        'otra-clave-que-no-es-la-del-servidor'
+      );
+
+      const response = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${tokenFalsificado}`);
+
+      expect(response.status).toBe(401);
+      expect(response.body.code).not.toBe('TOKEN_EXPIRED');
     });
   });
 });
