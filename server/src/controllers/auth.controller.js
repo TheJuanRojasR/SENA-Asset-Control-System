@@ -37,6 +37,11 @@ export const authController = {
   }),
 
   logout: asyncHandler(async (req, res) => {
+    // RN-AUTH-04: además de borrar la cookie, se invalida el par de tokens en el
+    // servidor para que la credencial capturada deje de renovar (AC-AUTH-03-2).
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+    await authService.logout(refreshToken);
+
     res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'strict' });
     successResponse(res, null, 'Sesión cerrada', HTTP_STATUS.OK);
   }),

@@ -37,8 +37,10 @@ export const authenticate = async (req, res, next) => {
     // RN-USR-05: el estado de la cuenta se verifica en cada petición. Un token vigente
     // de una cuenta desactivada no da acceso, y el rol se lee de la base y no del token,
     // así que desactivar o cambiar de rol surte efecto sin esperar al vencimiento.
-    const user = await userRepository.findById(decoded.userId);
-    if (!user || !user.isActive) {
+    // RN-AUTH-05: además, un token emitido antes del último cierre de sesión ya no vale,
+    // aunque su firma sea correcta y no haya vencido.
+    const user = await userRepository.findAuthSession(decoded.userId);
+    if (!user || !user.isActive || (decoded.sv ?? 0) !== user.sessionVersion) {
       return reject(res, 'Sesión no válida');
     }
 

@@ -36,6 +36,36 @@ export const userRepository = {
     });
   },
 
+  /**
+   * Sesión de autenticación: lo mínimo para validar un token en cada petición.
+   * Incluye `sessionVersion` (RN-AUTH-05), que no se expone en las respuestas de la API.
+   */
+  async findAuthSession(id) {
+    return prisma.user.findFirst({
+      where: { id, isDeleted: false },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        fullName: true,
+        isActive: true,
+        sessionVersion: true,
+      },
+    });
+  },
+
+  /**
+   * Invalida el par de tokens emitido hasta ahora incrementando el identificador de
+   * sesión del usuario (RN-AUTH-05, cierre de sesión).
+   */
+  async incrementSessionVersion(id) {
+    return prisma.user.update({
+      where: { id },
+      data: { sessionVersion: { increment: 1 } },
+      select: { id: true, sessionVersion: true },
+    });
+  },
+
   async create(data) {
     return prisma.user.create({
       data,

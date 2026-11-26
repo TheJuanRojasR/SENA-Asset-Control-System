@@ -105,9 +105,7 @@ describe('Auth endpoints', () => {
 
   describe('AC-AUTH-02-5 — Tipo de dato inválido en /refresh', () => {
     it('AC-AUTH-02-5 — un token de tipo numérico responde 400 VALIDATION_ERROR y no verifica la firma', async () => {
-      const response = await request(app)
-        .post('/api/auth/refresh')
-        .send({ refreshToken: 12345 });
+      const response = await request(app).post('/api/auth/refresh').send({ refreshToken: 12345 });
 
       expect(response.status).toBe(400);
       expect(response.body.code).toBe('VALIDATION_ERROR');
@@ -131,10 +129,7 @@ describe('Auth endpoints', () => {
 
       const cookie = login.headers['set-cookie'][0].split(';')[0];
 
-      const response = await request(app)
-        .post('/api/auth/refresh')
-        .set('Cookie', cookie)
-        .send();
+      const response = await request(app).post('/api/auth/refresh').set('Cookie', cookie).send();
 
       expect(response.status).toBe(200);
       expect(response.body.data.accessToken).toBeDefined();
@@ -224,6 +219,44 @@ describe('Auth endpoints', () => {
 
       // La ventana hasta el vencimiento del token no es aceptable (RN-USR-05).
       expect(response.status).toBe(401);
+    });
+  });
+
+  describe('AC-AUTH-03-2 — El token de refresco deja de servir', () => {
+    it('AC-AUTH-03-2 — el token de refresco capturado deja de renovar tras cerrar sesión', async () => {
+      const login = await request(app).post('/api/auth/login').send({
+        email: 'admin@sena.edu.co',
+        password: 'AdminSENA2024',
+      });
+      const cookieCapturada = login.headers['set-cookie'][0].split(';')[0];
+
+      const logout = await request(app).post('/api/auth/logout').set('Cookie', cookieCapturada);
+      expect(logout.status).toBe(200);
+
+      // El atacante reusa la credencial capturada antes del cierre: debe dar 401.
+      const renovacion = await request(app)
+        .post('/api/auth/refresh')
+        .set('Cookie', cookieCapturada);
+
+      expect(renovacion.status).toBe(401);
+      expect(renovacion.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('AC-AUTH-03-2 — el cierre de sesión invalida también el token de acceso vigente', async () => {
+      const login = await request(app).post('/api/auth/login').send({
+        email: 'admin@sena.edu.co',
+        password: 'AdminSENA2024',
+      });
+      const accessToken = login.body.data.accessToken;
+      const cookieCapturada = login.headers['set-cookie'][0].split(';')[0];
+
+      await request(app).post('/api/auth/logout').set('Cookie', cookieCapturada);
+
+      const perfil = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`);
+
+      expect(perfil.status).toBe(401);
     });
   });
 });
