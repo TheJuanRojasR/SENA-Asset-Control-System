@@ -100,4 +100,42 @@ describe('Auth endpoints', () => {
       expect(cuentaInactiva.headers['set-cookie']).toBeUndefined();
     });
   });
+
+  describe('AC-AUTH-02-5 — Tipo de dato inválido en /refresh', () => {
+    it('AC-AUTH-02-5 — un token de tipo numérico responde 400 VALIDATION_ERROR y no verifica la firma', async () => {
+      const response = await request(app)
+        .post('/api/auth/refresh')
+        .send({ refreshToken: 12345 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('VALIDATION_ERROR');
+      // «Sesión inválida» (INVALID_TOKEN, 401) no es «petición mal formada» (400).
+      expect(response.body.code).not.toBe('INVALID_TOKEN');
+      expect(response.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('AC-AUTH-02-2 — sin cookie y sin token en el cuerpo responde 400 MISSING_TOKEN', async () => {
+      const response = await request(app).post('/api/auth/refresh').send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('MISSING_TOKEN');
+    });
+
+    it('AC-AUTH-02-1 — el token puede venir en la cookie sin cuerpo', async () => {
+      const login = await request(app).post('/api/auth/login').send({
+        email: 'admin@sena.edu.co',
+        password: 'AdminSENA2024',
+      });
+
+      const cookie = login.headers['set-cookie'][0].split(';')[0];
+
+      const response = await request(app)
+        .post('/api/auth/refresh')
+        .set('Cookie', cookie)
+        .send();
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.accessToken).toBeDefined();
+    });
+  });
 });
