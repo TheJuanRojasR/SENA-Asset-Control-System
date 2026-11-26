@@ -59,7 +59,7 @@ describe('Auth endpoints', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(response.status).toBe(200);
-      expect(response.body.data.email).toBe('admin@sena.edu.co');
+      expect(response.body.data.user.email).toBe('admin@sena.edu.co');
     });
 
     it('debe rechazar peticiones sin token', async () => {
@@ -136,6 +136,33 @@ describe('Auth endpoints', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data.accessToken).toBeDefined();
+    });
+  });
+
+  describe('AC-AUTH-04-1 — Contrato idéntico al del inicio de sesión', () => {
+    it('AC-AUTH-04-1 — /me entrega el usuario en el mismo lugar que login y sin contraseña', async () => {
+      const login = await request(app).post('/api/auth/login').send({
+        email: 'admin@sena.edu.co',
+        password: 'AdminSENA2024',
+      });
+
+      const me = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${login.body.data.accessToken}`);
+
+      expect(me.status).toBe(200);
+
+      // Mismo lugar del cuerpo que el inicio de sesión: data.user.
+      expect(me.body.data.user).toBeDefined();
+      expect(me.body.data.user.email).toBe('admin@sena.edu.co');
+
+      // Misma forma: las dos rutas exponen el mismo conjunto de campos.
+      expect(Object.keys(me.body.data.user).sort()).toEqual(
+        Object.keys(login.body.data.user).sort()
+      );
+
+      // AC-AUTH-04-1: el cuerpo no expone la contraseña ni su hash.
+      expect(JSON.stringify(me.body)).not.toMatch(/passwordHash|"password"/i);
     });
   });
 });

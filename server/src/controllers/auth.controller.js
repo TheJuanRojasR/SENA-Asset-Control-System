@@ -43,6 +43,8 @@ export const authController = {
 
   me: asyncHandler(async (req, res) => {
     const result = await authService.me(req.user.userId);
-    successResponse(res, result.user, 'Perfil obtenido');
+    // AC-AUTH-04-1: el perfil se anida en `data.user` igual que en el inicio de sesión,
+    // para que el cliente tenga una sola ruta de lectura del usuario.
+    successResponse(res, result, 'Perfil obtenido');
   }),
 };
