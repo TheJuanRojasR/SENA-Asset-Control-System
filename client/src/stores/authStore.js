@@ -43,7 +43,8 @@ export const useAuthStore = create(
       fetchProfile: async () => {
         try {
           const response = await authApi.me();
-          set({ user: response.data.data, isAuthenticated: true });
+          // AC-AUTH-04-1: /auth/me anida el usuario en data.user, igual que el login.
+          set({ user: response.data.data.user, isAuthenticated: true });
         } catch {
           localStorage.removeItem('accessToken');
           set({ user: null, accessToken: null, isAuthenticated: false });

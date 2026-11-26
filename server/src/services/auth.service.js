@@ -17,30 +17,39 @@ const publicUserFields = (user) => ({
   lastLoginAt: user.lastLoginAt,
 });
 
+/**
+ * RN-AUTH-05: el par de tokens lleva el identificador de sesión del usuario (`sv`).
+ * Al cerrar sesión se incrementa en la base y todos los tokens anteriores dejan de valer.
+ */
+const tokenPayload = (user) => ({
+  userId: user.id,
+  email: user.email,
+  role: user.role,
+  fullName: user.fullName,
+  sv: user.sessionVersion ?? 0,
+});
+
+const invalidCredentials = () =>
+  new AppError('Credenciales inválidas', HTTP_STATUS.UNAUTHORIZED, 'INVALID_CREDENTIALS');
+
 export const authService = {
   async login({ email, password }) {
     const user = await userRepository.findByEmailWithPassword(email);
     if (!user) {
-      throw new AppError('Credenciales inválidas', HTTP_STATUS.UNAUTHORIZED, 'INVALID_CREDENTIALS');
-    }
-
-    if (!user.isActive) {
-      throw new AppError('Usuario inactivo', HTTP_STATUS.UNAUTHORIZED, 'USER_INACTIVE');
+      throw invalidCredentials();
     }
 
     const isValid = await comparePassword(password, user.passwordHash);
-    if (!isValid) {
-      throw new AppError('Credenciales inválidas', HTTP_STATUS.UNAUTHORIZED, 'INVALID_CREDENTIALS');
+
+    // RN-AUTH-03: una cuenta desactivada se rechaza exactamente igual que una contraseña
+    // incorrecta, para que el intento de acceso no revele que el correo existe.
+    if (!isValid || !user.isActive) {
+      throw invalidCredentials();
     }
 
     await userRepository.updateLastLogin(user.id);
 
-    const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      fullName: user.fullName,
-    });
+    const tokens = generateTokens(tokenPayload(user));
 
     return {
       user: publicUserFields(user),
@@ -60,22 +69,41 @@ export const authService = {
       throw new AppError('Refresh token inválido', HTTP_STATUS.UNAUTHORIZED, 'INVALID_TOKEN');
     }
 
-    const user = await userRepository.findById(decoded.userId);
+    const user = await userRepository.findAuthSession(decoded.userId);
     if (!user || !user.isActive) {
       throw new AppError('Usuario no encontrado o inactivo', HTTP_STATUS.UNAUTHORIZED, 'USER_INVALID');
     }
 
-    const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      fullName: user.fullName,
-    });
+    // RN-AUTH-05: un token emitido antes del último cierre de sesión ya no renueva.
+    if ((decoded.sv ?? 0) !== user.sessionVersion) {
+      throw new AppError('Refresh token inválido', HTTP_STATUS.UNAUTHORIZED, 'INVALID_TOKEN');
+    }
+
+    const tokens = generateTokens(tokenPayload(user));
 
     return {
       user: publicUserFields(user),
       ...tokens,
     };
+  },
+
+  /**
+   * RN-AUTH-04: cerrar sesión termina el par de tokens en el servidor, no solo en el
+   * navegador. Se identifica al usuario por su propia credencial de refresco para que
+   * el cierre funcione aunque el token de acceso ya haya vencido, y un token ilegible
+   * o vencido no revoca nada: no hay sesión que proteger.
+   */
+  async logout(refreshToken) {
+    if (!refreshToken) return;
+
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch {
+      return;
+    }
+
+    await userRepository.incrementSessionVersion(decoded.userId);
   },
 
   async me(userId) {

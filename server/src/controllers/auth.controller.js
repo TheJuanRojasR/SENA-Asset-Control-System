@@ -37,12 +37,19 @@ export const authController = {
   }),
 
   logout: asyncHandler(async (req, res) => {
+    // RN-AUTH-04: además de borrar la cookie, se invalida el par de tokens en el
+    // servidor para que la credencial capturada deje de renovar (AC-AUTH-03-2).
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+    await authService.logout(refreshToken);
+
     res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'strict' });
     successResponse(res, null, 'Sesión cerrada', HTTP_STATUS.OK);
   }),
 
   me: asyncHandler(async (req, res) => {
     const result = await authService.me(req.user.userId);
-    successResponse(res, result.user, 'Perfil obtenido');
+    // AC-AUTH-04-1: el perfil se anida en `data.user` igual que en el inicio de sesión,
+    // para que el cliente tenga una sola ruta de lectura del usuario.
+    successResponse(res, result, 'Perfil obtenido');
   }),
 };
