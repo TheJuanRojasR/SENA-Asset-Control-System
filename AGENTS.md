@@ -105,24 +105,75 @@ El seed es idempotente; puede ejecutarse varias veces sin duplicar datos clave.
 
 ## 6. Cómo testear
 
+La BD de test es `sena_inventario_test`. Los tests del backend la usan automáticamente cuando
+`NODE_ENV=test`, porque `DATABASE_URL_TEST` tiene prioridad sobre `DATABASE_URL`
+(`server/src/config/env.js`).
+
+### Con Docker (camino documentado)
+
 ```bash
-# Backend
+# Suite completa del servidor
 docker compose exec api npm test
 
-# Frontend
-docker compose exec client npm test
+# Un solo dominio (desde cualquier máquina)
+docker compose exec api npm test -- tests/integration/auth.test.js
+
+# Suite del cliente con Vitest (sin modo watch)
+docker compose exec client npm test -- --run
 
 # Lint
 docker compose exec api npm run lint
 docker compose exec client npm run lint
-
-# O desde la raíz (Makefile)
-make test
-make test-client
-make lint   # si existe el target
 ```
 
-La base de datos de tests es `sena_inventario_test`; los tests de backend la usan automáticamente cuando `NODE_ENV=test` gracias a `DATABASE_URL_TEST`.
+### Crear y migrar la BD de test (primera vez y por cada migración nueva)
+
+`docker-compose.yml` crea y migra **solo** la BD de desarrollo (`MIGRATE_DATABASE_URL`). La BD de
+test hay que prepararla aparte:
+
+```bash
+# 1. Crear la base y dar permisos al usuario de la app
+docker compose exec db mysql -uroot -proot -e \
+  "CREATE DATABASE IF NOT EXISTS sena_inventario_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   GRANT ALL PRIVILEGES ON sena_inventario_test.* TO 'sena_user'@'%'; FLUSH PRIVILEGES;"
+
+# 2. Aplicar el esquema a la base de test
+docker compose exec api sh -c \
+  "export DATABASE_URL=\$DATABASE_URL_TEST && npx prisma migrate deploy"
+```
+
+**Regla:** cada migración nueva se aplica a las **dos** bases (dev y test). Si no, la suite falla con
+`column ... does not exist` y parece un fallo de negocio.
+
+Si se va a probar una rama con migraciones nuevas sin ensuciar la BD de test compartida, se puede
+usar una base aparte y sobreescribir solo para esa corrida:
+
+```bash
+docker compose exec db mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS sena_inventario_test_rama CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON sena_inventario_test_rama.* TO 'sena_user'@'%'; FLUSH PRIVILEGES;"
+docker compose exec -e DATABASE_URL_TEST=mysql://root:root@db:3306/sena_inventario_test_rama api sh -c "export DATABASE_URL=\$DATABASE_URL_TEST && npx prisma migrate deploy"
+docker compose exec -e DATABASE_URL_TEST=mysql://root:root@db:3306/sena_inventario_test_rama api npm test
+```
+
+### Sin Docker (alternativa)
+
+Necesita Node 20+, MySQL 8 o MariaDB local y las dos bases (`sena_inventario_dev` y
+`sena_inventario_test`). Crear `server/.env` desde `server/.env.example`, usar el usuario
+`sena_user`/`sena_pass` y `127.0.0.1` en las URLs, aplicar `prisma migrate deploy` a **ambas** bases y
+ejecutar:
+
+```bash
+cd server && npm install && npm test
+cd client && npm install && npm test -- --run
+```
+
+### Resultado esperado de la base `develop`
+
+- Servidor: **100 passed / 2 failed** (`request.test.js` y `category.test.js`: son los defectos
+  conocidos de los módulos 06 y 10, con su `DEF-*`).
+- Cliente: **43 passed**.
+
+Adminer escucha en `localhost:8081` cuando `ADMINER_PORT=8081` está definido en `.env` (el `8080`
+por defecto puede estar ocupado en la máquina).
 
 ## 7. Convenciones de trabajo
 
