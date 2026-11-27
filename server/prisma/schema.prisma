@@ -24,6 +24,7 @@ enum RequestStatus {
   REJECTED
   PACKED
   DELIVERED
+  PARTIALLY_DELIVERED
   PARTIALLY_RETURNED
   COMPLETED
   CANCELLED
@@ -50,6 +51,25 @@ enum MovementType {
   RESTOCK
   ADJUSTMENT
   DISPOSAL
+}
+
+// RN-PRE-08 / RN-PRE-10: la condición de retorno tiene dos ejes independientes y cerrados.
+enum ReturnFunctioning {
+  FUNCIONA
+  FUNCIONA_CON_FALLA
+  NO_FUNCIONA
+}
+
+enum ReturnDamageState {
+  SIN_DANO
+  DESGASTE_NORMAL
+  DANADO
+}
+
+// RN-PRE-09: la tarea por daño tiene dos estados y no se reabre.
+enum DamageTaskStatus {
+  OPEN
+  RESOLVED
 }
 
 enum NotificationType {
@@ -83,6 +103,9 @@ model User {
   requestsDelivered Request[]  @relation("RequestDeliveredBy")
   movements      Movement[]    @relation("MovementResponsible")
   returnedUnits  RequestItemUnit[] @relation("ReturnedByUser")
+  lostUnits      RequestItemUnit[] @relation("LostByUser")
+  damageTasksCreated  DamageTask[] @relation("DamageTaskCreatedBy")
+  damageTasksResolved DamageTask[] @relation("DamageTaskResolvedBy")
   notifications  Notification[]
 
   @@unique([email, isDeleted])
@@ -182,6 +205,7 @@ model InventoryUnit {
   childUnits  InventoryUnit[] @relation("UnitAssembly")
   movements   Movement[]
   requestItemUnits RequestItemUnit[]
+  damageTasks DamageTask[]
 
   @@index([itemId])
   @@index([status])
@@ -274,11 +298,21 @@ model RequestItemUnit {
   returnedAt            DateTime?
   returnedById          Int?
   physicalStateReturned PhysicalState?
+  // RN-PRE-05 / RN-PRE-10: condición de retorno por unidad devuelta (dos ejes + descripción).
+  returnFunctioning     ReturnFunctioning?
+  returnDamageState     ReturnDamageState?
+  returnDescription     String?         @db.Text
+  // RN-PRE-15 / RN-PRE-16: pérdida declarada de una unidad prestada (distinta de no devuelta).
+  lostAt                DateTime?
+  lostById              Int?
+  lostReason            String?         @db.Text
   createdAt             DateTime        @default(now())
 
   requestItem      RequestItem    @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
   inventoryUnit    InventoryUnit  @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
   returnedBy       User?          @relation("ReturnedByUser", fields: [returnedById], references: [id])
+  lostBy           User?          @relation("LostByUser", fields: [lostById], references: [id])
+  damageTasks      DamageTask[]
 
   @@unique([requestItemId, inventoryUnitId])
   @@index([requestItemId])
@@ -325,4 +359,29 @@ model Notification {
   @@index([read])
   @@index([createdAt])
   @@map("notifications")
+}
+
+// RN-PRE-06 / RN-PRE-09: tarea pendiente visible para el administrador cuando algo vuelve
+// dañado, no funciona o le falta una pieza. Sin consecuencia para el instructor.
+model DamageTask {
+  id               Int              @id @default(autoincrement())
+  inventoryUnitId  Int
+  requestItemUnitId Int?
+  description      String           @db.Text
+  status           DamageTaskStatus @default(OPEN)
+  createdById      Int?
+  resolvedById     Int?
+  resolvedAt       DateTime?
+  resolutionNote   String?          @db.Text
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  inventoryUnit   InventoryUnit    @relation(fields: [inventoryUnitId], references: [id], onDelete: Cascade)
+  requestItemUnit RequestItemUnit? @relation(fields: [requestItemUnitId], references: [id], onDelete: SetNull)
+  createdBy       User?            @relation("DamageTaskCreatedBy", fields: [createdById], references: [id])
+  resolvedBy      User?            @relation("DamageTaskResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([inventoryUnitId])
+  @@index([status])
+  @@map("damage_tasks")
 }
