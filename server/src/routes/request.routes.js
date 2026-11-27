@@ -7,6 +7,7 @@ import {
   createRequestSchema,
   updateRequestSchema,
   approveRequestSchema,
+  deliverRequestSchema,
   rejectRequestSchema,
   requestIdParamSchema,
   listRequestsQuerySchema,
@@ -61,6 +62,7 @@ router.put(
   '/:id/deliver',
   authorize('ADMIN'),
   validateRequest(requestIdParamSchema),
+  validateBody(deliverRequestSchema),
   requestController.deliver
 );
 router.put(

@@ -56,6 +56,18 @@ export const rejectRequestSchema = z.object({
     .min(1, 'El motivo de rechazo es obligatorio'),
 });
 
+// RN-SOL-11 / US-SOL-06: la entrega puede ser total o parcial por línea.
+export const deliverRequestSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        itemId: z.number().int().positive('El ítem es requerido'),
+        deliveredQty: z.number().int().min(0, 'La cantidad entregada no puede ser negativa'),
+      })
+    )
+    .optional(),
+});
+
 export const requestIdParamSchema = z.object({
   id: z.coerce.number().int().positive('ID inválido'),
 });

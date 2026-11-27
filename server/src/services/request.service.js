@@ -538,93 +538,154 @@ export const requestService = {
     });
   },
 
-  async deliverRequest(adminId, id) {
+  /**
+   * RN-SOL-11 / US-SOL-06: registrar la entrega, total o parcial. Solo desde PACKED o
+   * PARTIALLY_DELIVERED; cada unidad entregada queda con tenedor y fecha (RN-PRE-02) y los
+   * consumibles se descuentan en este momento (RN-INV-11).
+   */
+  async deliverRequest(adminId, id, data = {}) {
     return prisma.$transaction(async (tx) => {
       const request = await requestRepository.findById(id, { tx });
       if (!request) {
         throw new AppError('Solicitud no encontrada', HTTP_STATUS.NOT_FOUND, 'REQUEST_NOT_FOUND');
       }
 
-      if (request.status !== 'PACKED') {
-        throw new AppError('Solo se pueden entregar solicitudes empacadas', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+      if (request.status !== 'PACKED' && request.status !== 'PARTIALLY_DELIVERED') {
+        throw new AppError(
+          'Solo se pueden entregar solicitudes empacadas o parcialmente entregadas',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
       const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
+      const desired = new Map(
+        (data.items || []).map((line) => [line.itemId, line.deliveredQty])
+      );
 
-      await Promise.all(
-        requestItems.map(async (requestItem) => {
-          const deliveredQty = requestItem.approvedQty ?? requestItem.requestedQty;
-          const item = await itemRepository.findById(requestItem.itemId);
-
-          if (item?.isConsumable) {
-            // RN-INV-11: el consumible se descuenta del stock al entregar, sin unidad.
-            if ((item.stock ?? 0) < deliveredQty) {
-              throw new AppError(
-                `Stock insuficiente de ${item.name}`,
-                HTTP_STATUS.CONFLICT,
-                'INSUFFICIENT_STOCK'
-              );
-            }
-            await tx.item.update({
-              where: { id: item.id },
-              data: { stock: { decrement: deliveredQty } },
-            });
-            await requestRepository.createMovement(
-              {
-                type: 'LOAN',
-                itemId: item.id,
-                quantity: deliveredQty,
-                responsibleId: adminId,
-                requestId: id,
-                notes: 'Entrega de consumible',
-              },
-              { tx }
-            );
-            await requestRepository.updateRequestItem(requestItem.id, { deliveredQty }, { tx });
-            return;
-          }
-
-          await requestRepository.updateRequestItem(requestItem.id, { deliveredQty }, { tx });
-
-          await Promise.all(
-            requestItem.assignedUnits.map(async (assignment) => {
-              const unit = assignment.inventoryUnit;
-              // RN-CTX-08 / AC-INV-11-5: al prestarse, la unidad queda ubicada en el
-              // ambiente de destino de la solicitud.
-              await requestRepository.updateInventoryUnit(
-                unit.id,
-                {
-                  status: 'LOANED',
-                  ...(request.environmentId ? { environmentId: request.environmentId } : {}),
-                },
-                { tx }
-              );
-              await tx.requestItemUnit.update({
-                where: { id: assignment.id },
-                data: { loanedAt: new Date() },
-              });
-              await requestRepository.createMovement(
-                {
-                  type: 'LOAN',
-                  itemId: requestItem.itemId,
-                  inventoryUnitId: unit.id,
-                  quantity: 1,
-                  responsibleId: adminId,
-                  requestId: id,
-                },
-                { tx }
-              );
-            })
+      for (const itemId of desired.keys()) {
+        if (!requestItems.some((requestItem) => requestItem.itemId === itemId)) {
+          throw new AppError(
+            'La solicitud no contiene ese ítem',
+            HTTP_STATUS.BAD_REQUEST,
+            'ITEM_NOT_IN_REQUEST'
           );
-        })
+        }
+      }
+
+      const deliveredAt = new Date();
+
+      for (const requestItem of requestItems) {
+        const approvedQty = requestItem.approvedQty ?? requestItem.requestedQty;
+        const currentDelivered = requestItem.deliveredQty ?? 0;
+        const target = desired.has(requestItem.itemId)
+          ? desired.get(requestItem.itemId)
+          : approvedQty;
+
+        if (target < currentDelivered || target > approvedQty) {
+          throw new AppError(
+            'La cantidad entregada no puede superar la aprobada ni retroceder',
+            HTTP_STATUS.BAD_REQUEST,
+            'INVALID_DELIVERED_QTY'
+          );
+        }
+
+        const delta = target - currentDelivered;
+        if (delta === 0) continue;
+
+        const item = await itemRepository.findById(requestItem.itemId);
+
+        if (item?.isConsumable) {
+          if ((item.stock ?? 0) < delta) {
+            throw new AppError(
+              `Stock insuficiente de ${item.name}`,
+              HTTP_STATUS.CONFLICT,
+              'INSUFFICIENT_STOCK'
+            );
+          }
+          await tx.item.update({
+            where: { id: item.id },
+            data: { stock: { decrement: delta } },
+          });
+          await requestRepository.createMovement(
+            {
+              type: 'LOAN',
+              itemId: item.id,
+              quantity: delta,
+              responsibleId: adminId,
+              requestId: id,
+              notes: 'Entrega de consumible',
+            },
+            { tx }
+          );
+          await requestRepository.updateRequestItem(
+            requestItem.id,
+            { deliveredQty: target },
+            { tx }
+          );
+          continue;
+        }
+
+        const pendingAssignments = requestItem.assignedUnits
+          .filter((assignment) => !assignment.loanedAt && !assignment.lostAt)
+          .slice(0, delta);
+
+        if (pendingAssignments.length < delta) {
+          throw new AppError(
+            'No hay unidades asignadas pendientes para entregar',
+            HTTP_STATUS.CONFLICT,
+            'NOT_ENOUGH_ASSIGNED_UNITS'
+          );
+        }
+
+        for (const assignment of pendingAssignments) {
+          const unit = assignment.inventoryUnit;
+          // RN-CTX-08 / AC-INV-11-5: al prestarse, la unidad queda ubicada en el ambiente
+          // de destino de la solicitud.
+          await requestRepository.updateInventoryUnit(
+            unit.id,
+            {
+              status: 'LOANED',
+              ...(request.environmentId ? { environmentId: request.environmentId } : {}),
+            },
+            { tx }
+          );
+          await tx.requestItemUnit.update({
+            where: { id: assignment.id },
+            data: { loanedAt: deliveredAt },
+          });
+          await requestRepository.createMovement(
+            {
+              type: 'LOAN',
+              itemId: requestItem.itemId,
+              inventoryUnitId: unit.id,
+              quantity: 1,
+              responsibleId: adminId,
+              requestId: id,
+            },
+            { tx }
+          );
+        }
+
+        await requestRepository.updateRequestItem(
+          requestItem.id,
+          { deliveredQty: target },
+          { tx }
+        );
+      }
+
+      const refreshedItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
+      const allDelivered = refreshedItems.every(
+        (requestItem) =>
+          (requestItem.deliveredQty ?? 0) >= (requestItem.approvedQty ?? requestItem.requestedQty)
       );
 
       await requestRepository.update(
         id,
         {
-          status: 'DELIVERED',
+          status: allDelivered ? 'DELIVERED' : 'PARTIALLY_DELIVERED',
           deliveredById: adminId,
-          deliveredAt: new Date(),
+          deliveredAt,
         },
         { tx }
       );

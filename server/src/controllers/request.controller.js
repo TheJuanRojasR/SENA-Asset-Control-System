@@ -61,7 +61,11 @@ export const requestController = {
   }),
 
   deliver: asyncHandler(async (req, res) => {
-    const result = await requestService.deliverRequest(req.user.userId, Number(req.params.id));
+    const result = await requestService.deliverRequest(
+      req.user.userId,
+      Number(req.params.id),
+      req.body || {}
+    );
     successResponse(res, result, 'Solicitud entregada correctamente');
   }),
 
