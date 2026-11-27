@@ -105,6 +105,7 @@ export const requestSelect = {
         select: {
           id: true,
           inventoryUnitId: true,
+          loanedAt: true,
           inventoryUnit: {
             select: {
               id: true,
