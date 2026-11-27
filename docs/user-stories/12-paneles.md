@@ -10,7 +10,7 @@ El panel **no calcula nada nuevo**: **expone** cifras que ya especifican otros e
 
 Lo usan los dos actores de `RN-CTX-05`, cada uno con su panel: el administrador mira el **almacén completo** —padrón, catálogo, cola de aprobación, stock— y el instructor mira **lo suyo** —sus solicitudes activas y sus devoluciones pendientes—.
 
-Si el módulo falla, el usuario pierde la única vista que reúne el estado sin recorrer seis pantallas y, cuando dos de ellas cuentan distinto, tiene que decidir a cuál de los dos números creerle. Estado hoy: **2 historias y 8 criterios identificados** —**7 vigentes y 1 retirado**—, todos **especificados y sin ejecutar**.
+Si el módulo falla, el usuario pierde la única vista que reúne el estado sin recorrer seis pantallas y, cuando dos de ellas cuentan distinto, tiene que decidir a cuál de los dos números creerle. Estado hoy: **2 historias y 8 criterios identificados** —**7 vigentes ejecutados y en `OK`, 1 retirado**— en la rama `devJoseph-paneles`.
 
 > **Frontera con los epics 04, 05, 06 y 07.** Los **estados** de la solicitud son del epic 06, las **devoluciones** del epic 07, el **umbral de stock bajo** es `RN-INV-44` del epic 05 y el atributo `minStock` es del elemento (epic 04). Este epic especifica **qué muestra el panel**, no los datos que hay detrás: ningún criterio redefine una métrica, cada uno exige que la cifra del panel **coincida** con la de su pantalla de detalle.
 
@@ -353,17 +353,17 @@ Sin decisión todavía: **cuántas** solicitudes entran en «las últimas» (la 
 
 ## Trazabilidad y estado
 
-Este epic está **especificado y no ejecutado**: **ningún criterio es `OK` ni `GAP` hoy**, porque ninguno se corrió. Un criterio se marca solo cuando su test corre, nunca por lectura del código.
+Este epic se ejecutó: los **7 criterios vigentes** corren con test y están en `OK` (`server/tests/integration/dashboard.test.js`); `AC-PAN-02-3` queda **Retirado** por `OPEN-PAN-01` y no se renumera. Un criterio se marca solo cuando su test corre, nunca por lectura del código.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-PAN-01-1` | `RN-PAN-01` | Sin ejecutar |
-| `AC-PAN-01-2` | `RN-PAN-01` | Sin ejecutar |
-| `AC-PAN-01-3` | `RN-PAN-01` | Sin ejecutar |
-| `AC-PAN-01-4` | `RN-INV-44`, `RN-PAN-02` | Sin ejecutar |
-| `AC-PAN-01-5` | `RN-PAN-01` | Sin ejecutar |
-| `AC-PAN-02-1` | `RN-PAN-01` | Sin ejecutar |
-| `AC-PAN-02-2` | `RN-PAN-01` | Sin ejecutar |
+| `AC-PAN-01-1` | `RN-PAN-01` | `OK` |
+| `AC-PAN-01-2` | `RN-PAN-01` | `OK` |
+| `AC-PAN-01-3` | `RN-PAN-01` | `OK` |
+| `AC-PAN-01-4` | `RN-INV-44`, `RN-PAN-02` | `OK` |
+| `AC-PAN-01-5` | `RN-PAN-01` | `OK` |
+| `AC-PAN-02-1` | `RN-PAN-01` | `OK` |
+| `AC-PAN-02-2` | `RN-PAN-01` | `OK` |
 | `AC-PAN-02-3` | `RN-PAN-01` | **Retirado** — `OPEN-PAN-01`: el carrito vive solo en el navegador |
 
 | US | ACs | Vigentes | `RN` | `Derivada` | `OPEN` | Retirados |
@@ -372,7 +372,7 @@ Este epic está **especificado y no ejecutado**: **ningún criterio es `OK` ni `
 | `US-PAN-02` | 3 | 2 | 2 | 0 | 0 | 1 (`AC-PAN-02-3`) |
 | **Total** | **8** | **7** | **7** | **0** | **0** | **1** |
 
-Totales: **2 historias y 8 criterios identificados**, de los cuales **7 están vigentes** y **1 retirado**. Los 7 vigentes se apoyan en una regla de negocio confirmada: `RN-PAN-01` ×6, `RN-INV-44` ×1 y `RN-PAN-02` ×1 — **8 citas** para **7 criterios**, porque `AC-PAN-01-4` cita dos reglas. Ninguno es `Estándar`, `Derivada` ni `OPEN`. Los ids siguen siendo **8** porque el criterio retirado conserva su número. `RN-PAN-02` aplica además como criterio de coherencia a todo indicador que duplica una pantalla de detalle (`AC-PAN-01-2`, `AC-PAN-01-5`), aunque esas menciones no cuenten como `Origen`.
+Totales: **2 historias y 8 criterios identificados**: **7 `OK`** (vigentes, con test) y **1 retirado** (`AC-PAN-02-3`). Los 7 vigentes se apoyan en una regla de negocio confirmada: `RN-PAN-01` ×6, `RN-INV-44` ×1 y `RN-PAN-02` ×1 — **8 citas** para **7 criterios**, porque `AC-PAN-01-4` cita dos reglas. Ninguno es `Estándar`, `Derivada` ni `OPEN`. Los ids siguen siendo **8** porque el criterio retirado conserva su número. `RN-PAN-02` aplica además como criterio de coherencia a todo indicador que duplica una pantalla de detalle (`AC-PAN-01-2`, `AC-PAN-01-5`), aunque esas menciones no cuenten como `Origen`.
 
 ## Anexo — Datos de prueba
 
