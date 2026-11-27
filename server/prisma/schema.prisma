@@ -84,6 +84,8 @@ enum DamageTaskStatus {
 enum NotificationType {
   REQUEST_APPROVED
   REQUEST_REJECTED
+  // RN-NOT-01 / AC-SOL-05-6: aviso de "listo para retirar" al empacar.
+  PICKUP_READY
   STOCK_LOW
   RETURN_REMINDER
   SYSTEM
@@ -260,6 +262,8 @@ model Request {
   pickupDate      DateTime?
   // RN-SOL-04: nota del administrador cuando aprueba menos de lo solicitado.
   approvalNote    String?       @db.Text
+  // RN-INV-24 / AC-SOL-05-3: componentes opcionales ausentes documentados al empacar.
+  packingNotes    String?       @db.Text
   estimatedDate   DateTime?
   observations    String?       @db.Text
   approvedById    Int?
@@ -283,6 +287,7 @@ model Request {
   environment   Environment?  @relation(fields: [environmentId], references: [id])
   requestItems  RequestItem[]
   movements     Movement[]
+  notifications Notification[]
 
   @@index([requesterId])
   @@index([status])
@@ -368,13 +373,16 @@ model Movement {
 model Notification {
   id        Int              @id @default(autoincrement())
   userId    Int
+  // RN-NOT-01: el aviso puede referirse a una solicitud concreta.
+  requestId Int?
   type      NotificationType @default(SYSTEM)
   title     String           @db.VarChar(255)
   message   String           @db.Text
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request Request? @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([read])
