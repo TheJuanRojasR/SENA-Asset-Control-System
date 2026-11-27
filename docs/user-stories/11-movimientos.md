@@ -410,21 +410,21 @@ Sin decisión todavía: la clave de orden, el tamaño de página, las combinacio
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **especificado y no ejecutado**: los 11 criterios están sin estado y ninguno es `OK`, `GAP` ni `FALTA` hoy.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó en la rama `devJoseph-movimientos`: los **11** criterios tienen test y están en `OK`. La verificación implementó el registro de los ocho eventos (alta, ensamblaje, desensamblaje, reserva, entrega, devolución, baja y ajuste de cantidad) y la consulta del historial con sus cuatro filtros y paginación.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-MOV-01-1` | `RN-MOV-01` | Sin ejecutar |
-| `AC-MOV-01-2` | `RN-MOV-01` | Sin ejecutar |
-| `AC-MOV-01-3` | `RN-MOV-01`, `RN-SOL-11` | Sin ejecutar |
-| `AC-MOV-01-4` | `RN-INV-17`, `RN-PRE-15`, `RN-INV-13` | Sin ejecutar |
-| `AC-MOV-01-5` | `RN-MOV-01` | Sin ejecutar |
-| `AC-MOV-01-6` | `RN-MOV-01` | Sin ejecutar |
-| `AC-MOV-01-7` | `RN-MOV-01`, `RN-INV-11` | Sin ejecutar |
-| `AC-MOV-02-1` | `RN-MOV-02` | Sin ejecutar |
-| `AC-MOV-02-2` | `RN-MOV-02` | Sin ejecutar |
-| `AC-MOV-02-3` | `RN-MOV-02` | Sin ejecutar |
-| `AC-MOV-02-4` | `RN-CTX-02` | Sin ejecutar |
+| `AC-MOV-01-1` | `RN-MOV-01` | `OK` |
+| `AC-MOV-01-2` | `RN-MOV-01` | `OK` |
+| `AC-MOV-01-3` | `RN-MOV-01`, `RN-SOL-11` | `OK` |
+| `AC-MOV-01-4` | `RN-INV-17`, `RN-PRE-15`, `RN-INV-13` | `OK` |
+| `AC-MOV-01-5` | `RN-MOV-01` | `OK` |
+| `AC-MOV-01-6` | `RN-MOV-01` | `OK` |
+| `AC-MOV-01-7` | `RN-MOV-01`, `RN-INV-11` | `OK` |
+| `AC-MOV-02-1` | `RN-MOV-02` | `OK` |
+| `AC-MOV-02-2` | `RN-MOV-02` | `OK` |
+| `AC-MOV-02-3` | `RN-MOV-02` | `OK` |
+| `AC-MOV-02-4` | `RN-CTX-02` | `OK` |
 
 | US | ACs | Implementables (`RN`) | `Estándar` | `Derivada` | `OPEN` |
 |----|-----|-----------------------|------------|------------|--------|
@@ -432,7 +432,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-MOV-02` | 4 | 4 | 0 | 0 | 0 |
 | **Total** | **11** | **11** | **0** | **0** | **0** |
 
-Totales: **2 historias y 11 criterios**, todos sin ejecutar. Los 11 se apoyan en una regla de negocio confirmada: `RN-MOV-01` ×6, `RN-MOV-02` ×3, `RN-INV-11` ×1, `RN-INV-13` ×1, `RN-INV-17` ×1, `RN-PRE-15` ×1, `RN-SOL-11` ×1 y `RN-CTX-02` ×1 — **15 citas** para **11 criterios**, porque `AC-MOV-01-3` cita dos reglas, `AC-MOV-01-4` cita tres y `AC-MOV-01-7` cita dos. Ninguno es `Estándar`, `Derivada` ni `OPEN`.
+Totales: **2 historias y 11 criterios**, **11 `OK`**; no quedan criterios sin ejecutar. Los 11 se apoyan en una regla de negocio confirmada: `RN-MOV-01` ×6, `RN-MOV-02` ×3, `RN-INV-11` ×1, `RN-INV-13` ×1, `RN-INV-17` ×1, `RN-PRE-15` ×1, `RN-SOL-11` ×1 y `RN-CTX-02` ×1 — **15 citas** para **11 criterios**, porque `AC-MOV-01-3` cita dos reglas, `AC-MOV-01-4` cita tres y `AC-MOV-01-7` cita dos. Ninguno es `Estándar`, `Derivada` ni `OPEN`.
 
 Los **ocho eventos** de `RN-MOV-01` tienen criterio: el alta (`AC-MOV-01-1`), el ensamblaje y el desensamblaje (`AC-MOV-01-2`), la entrega y la devolución (`AC-MOV-01-3`), la baja (`AC-MOV-01-4`), la reserva (`AC-MOV-01-5`) y el ajuste de cantidad (`AC-MOV-01-6`). La **pérdida** se verifica en `AC-MOV-01-4` como **motivo de la baja**, no como tipo propio, y `AC-MOV-01-7` agrega la entrega de un consumible.
 
