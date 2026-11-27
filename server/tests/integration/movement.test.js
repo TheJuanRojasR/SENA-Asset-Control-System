@@ -209,7 +209,7 @@ describe('Módulo 11 — Movimientos del inventario', () => {
     it('AC-MOV-01-4 — La baja y la pérdida dejan un movimiento de baja con su motivo', async () => {
       // Baja directa de una unidad.
       const item = await createItem(category.id);
-      const unit = await createUnit(item.id);
+      const unit = await createUnit(item.id, { ownership: 'DONATED' });
       const before = await countMovements();
       const disposal = await request(app)
         .delete(`/api/inventory/${unit.id}`)
