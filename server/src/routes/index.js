@@ -8,6 +8,7 @@ import catalogRoutes from './catalog.routes.js';
 import inventoryRoutes from './inventory.routes.js';
 import requestRoutes from './request.routes.js';
 import loanRoutes from './loan.routes.js';
+import movementRoutes from './movement.routes.js';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.use('/catalog', catalogRoutes);
 router.use('/inventory', inventoryRoutes);
 router.use('/requests', requestRoutes);
 router.use('/loans', loanRoutes);
+router.use('/movements', movementRoutes);
 
 router.get('/health', (_req, res) => {
   res.json({ success: true, message: 'API funcionando correctamente' });

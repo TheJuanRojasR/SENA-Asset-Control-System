@@ -45,12 +45,18 @@ enum PhysicalState {
   DISPOSED
 }
 
+// RN-MOV-01: ocho eventos registrados. La pérdida no es un tipo propio: es el motivo de
+// una baja (DISPOSAL). LOAN = entrega; RETURN = devolución.
 enum MovementType {
+  ENTRY
+  ASSEMBLY
+  DISASSEMBLY
+  RESERVATION
   LOAN
   RETURN
-  RESTOCK
-  ADJUSTMENT
   DISPOSAL
+  ADJUSTMENT
+  RESTOCK
 }
 
 // RN-PRE-08 / RN-PRE-10: la condición de retorno tiene dos ejes independientes y cerrados.
