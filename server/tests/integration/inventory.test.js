@@ -2018,4 +2018,290 @@ describe('Inventory endpoints', () => {
       expect(kitAfter.body.data.unit.disposalInProgress).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-10 — Estados físicos y préstamo por piezas (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-10 — Estado físico y préstamo', () => {
+    const createItemRecord = (code, name) =>
+      prismaTest.item.create({ data: { code, name, categoryId: category.id } });
+    const createUnitViaApi = (payload) =>
+      request(app).post('/api/inventory').set('Authorization', authHeader(admin)).send(payload);
+    const requestUnit = (itemId) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId, requestedQty: 1 }] });
+    const deliverRequest = async (requestId) => {
+      await request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      return request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+    };
+    const createParentWithPiece = async ({ parentCode, pieceCode, parentState }) => {
+      const parentItem = await createItemRecord(parentCode, `Conjunto ${parentCode}`);
+      const pieceItem = await createItemRecord(pieceCode, `Pieza ${pieceCode}`);
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: parentItem.id, childItemId: pieceItem.id, isRequired: true },
+      });
+      const parentUnit = await createUnitViaApi({
+        itemId: parentItem.id,
+        serialNumber: `${parentCode}-U-001`,
+        ownership: 'SENA',
+      });
+      const pieceUnit = await createUnitViaApi({
+        itemId: pieceItem.id,
+        serialNumber: `${pieceCode}-U-001`,
+        ownership: 'SENA',
+      });
+      await request(app)
+        .post(`/api/inventory/${parentUnit.body.data.unit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [pieceUnit.body.data.unit.id] });
+      if (parentState) {
+        await request(app)
+          .put(`/api/inventory/${parentUnit.body.data.unit.id}`)
+          .set('Authorization', authHeader(admin))
+          .send({ physicalState: parentState });
+      }
+      return {
+        parentItem,
+        pieceItem,
+        parentUnitId: parentUnit.body.data.unit.id,
+        pieceUnitId: pieceUnit.body.data.unit.id,
+      };
+    };
+
+    it('AC-INV-10-1 — Una unidad operativa se presta como unidad y conserva su estado', async () => {
+      const target = await createItemRecord('EST-1', 'Equipo operativo');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-1-001',
+        ownership: 'SENA',
+        physicalState: 'OPERATIVO',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const requestResponse = await requestUnit(target.id);
+      expect(requestResponse.status).toBe(201);
+      const requestId = requestResponse.body.data.request.id;
+      const delivered = await deliverRequest(requestId);
+      expect(delivered.status).toBe(200);
+
+      const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unitId } });
+      expect(stored.status).toBe('LOANED');
+      expect(stored.physicalState).toBe('OPERATIVO');
+      const assignment = await prismaTest.requestItemUnit.findFirst({
+        where: { inventoryUnitId: unitId },
+      });
+      expect(assignment.loanedAt).not.toBeNull();
+    });
+
+    it('AC-INV-10-2 — Una unidad descargada/agotada no se presta ni por piezas', async () => {
+      const target = await createItemRecord('EST-2', 'Equipo agotado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-2-001',
+        ownership: 'SENA',
+        physicalState: 'DESCARGADO_AGOTADO',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await requestUnit(target.id);
+      expect(response.status).toBe(409);
+      expect(await prismaTest.requestItemUnit.count({ where: { inventoryUnitId: unitId } })).toBe(
+        0
+      );
+
+      const assembly = await createParentWithPiece({
+        parentCode: 'EST-2-KIT',
+        pieceCode: 'EST-2-PZA',
+        parentState: 'DESCARGADO_AGOTADO',
+      });
+      const pieceRequest = await requestUnit(assembly.pieceItem.id);
+      expect(pieceRequest.status).toBe(409);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { inventoryUnitId: assembly.pieceUnitId } })
+      ).toBe(0);
+      const pieceStored = await prismaTest.inventoryUnit.findUnique({
+        where: { id: assembly.pieceUnitId },
+      });
+      expect(pieceStored).not.toBeNull();
+    });
+
+    it('AC-INV-10-3 — Con falla no se presta la unidad, pero sí sus piezas sueltas', async () => {
+      const target = await createItemRecord('EST-3', 'Equipo con falla');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-3-001',
+        ownership: 'SENA',
+        physicalState: 'CON_FALLA',
+      });
+      expect((await requestUnit(target.id)).status).toBe(409);
+
+      const assembly = await createParentWithPiece({
+        parentCode: 'EST-3-KIT',
+        pieceCode: 'EST-3-PZA',
+        parentState: 'CON_FALLA',
+      });
+      const pieceRequest = await requestUnit(assembly.pieceItem.id);
+      expect(pieceRequest.status).toBe(201);
+      const delivered = await deliverRequest(pieceRequest.body.data.request.id);
+      expect(delivered.status).toBe(200);
+
+      const assignment = await prismaTest.requestItemUnit.findFirst({
+        where: { inventoryUnitId: assembly.pieceUnitId },
+      });
+      expect(assignment.loanedAt).not.toBeNull();
+      expect(assignment.returnedAt).toBeNull();
+      const parentStored = await prismaTest.inventoryUnit.findUnique({
+        where: { id: assembly.parentUnitId },
+      });
+      expect(parentStored.physicalState).toBe('CON_FALLA');
+      expect(created.body.data.unit.id).toBeDefined();
+    });
+
+    it('AC-INV-10-4 — En mantenimiento no se presta nada', async () => {
+      const target = await createItemRecord('EST-4', 'Equipo en mantenimiento');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-4-001',
+        ownership: 'SENA',
+        physicalState: 'EN_MANTENIMIENTO',
+      });
+
+      const response = await requestUnit(target.id);
+      expect(response.status).toBe(409);
+      expect(await prismaTest.requestItemUnit.count({ where: { inventoryUnitId: created.body.data.unit.id } })).toBe(0);
+
+      const assembly = await createParentWithPiece({
+        parentCode: 'EST-4-KIT',
+        pieceCode: 'EST-4-PZA',
+        parentState: 'EN_MANTENIMIENTO',
+      });
+      const pieceRequest = await requestUnit(assembly.pieceItem.id);
+      expect(pieceRequest.status).toBe(409);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { inventoryUnitId: assembly.pieceUnitId } })
+      ).toBe(0);
+    });
+
+    it('AC-INV-10-5 — Averiada no se presta como unidad, pero sí sus piezas sueltas', async () => {
+      const target = await createItemRecord('EST-5', 'Equipo averiado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-5-001',
+        ownership: 'SENA',
+        physicalState: 'AVERIADO',
+      });
+      expect((await requestUnit(target.id)).status).toBe(409);
+
+      const assembly = await createParentWithPiece({
+        parentCode: 'EST-5-KIT',
+        pieceCode: 'EST-5-PZA',
+        parentState: 'AVERIADO',
+      });
+      const pieceRequest = await requestUnit(assembly.pieceItem.id);
+      expect(pieceRequest.status).toBe(201);
+      const delivered = await deliverRequest(pieceRequest.body.data.request.id);
+      expect(delivered.status).toBe(200);
+      const parentStored = await prismaTest.inventoryUnit.findUnique({
+        where: { id: assembly.parentUnitId },
+      });
+      expect(parentStored.physicalState).toBe('AVERIADO');
+      expect(created.body.data.unit.id).toBeDefined();
+    });
+
+    it('AC-INV-10-6 — Un estado físico fuera de la lista cerrada se rechaza', async () => {
+      const target = await createItemRecord('EST-6', 'Estado inválido');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-6-001',
+        ownership: 'SENA',
+        physicalState: 'OPERATIVO',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await request(app)
+        .put(`/api/inventory/${unitId}`)
+        .set('Authorization', authHeader(admin))
+        .send({ physicalState: 'INVENTADO' });
+      expect(response.status).toBe(400);
+      const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unitId } });
+      expect(stored.physicalState).toBe('OPERATIVO');
+    });
+
+    it('AC-INV-10-7 — El instructor no puede cambiar el estado físico', async () => {
+      const target = await createItemRecord('EST-7', 'Cambio no autorizado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'EST-7-001',
+        ownership: 'SENA',
+        physicalState: 'OPERATIVO',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await request(app)
+        .put(`/api/inventory/${unitId}`)
+        .set('Authorization', authHeader(instructor))
+        .send({ physicalState: 'AVERIADO' });
+      expect(response.status).toBe(403);
+      const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unitId } });
+      expect(stored.physicalState).toBe('OPERATIVO');
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-13 — Alertas de stock bajo (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-13 — Alertas de stock bajo', () => {
+    const createConsumableRecord = (code, stock, minStock) =>
+      prismaTest.item.create({
+        data: {
+          code,
+          name: `Consumible ${code}`,
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'UNIDAD',
+          stock,
+          minStock,
+        },
+      });
+
+    it('AC-INV-13-1 — Se listan los elementos en su umbral mínimo o por debajo', async () => {
+      const atThreshold = await createConsumableRecord('ALERTA-5', 5, 5);
+      const below = await createConsumableRecord('ALERTA-2', 2, 5);
+
+      const response = await request(app)
+        .get('/api/inventory/low-stock')
+        .set('Authorization', authHeader(admin));
+      expect(response.status).toBe(200);
+      const rows = response.body.data.data;
+      const atRow = rows.find((row) => row.id === atThreshold.id);
+      const belowRow = rows.find((row) => row.id === below.id);
+      expect(atRow).toBeDefined();
+      expect(belowRow).toBeDefined();
+      expect(atRow.availableStock).toBe(5);
+      expect(atRow.minStock).toBe(5);
+      expect(belowRow.availableStock).toBe(2);
+    });
+
+    it('AC-INV-13-2 — Un elemento por encima de su umbral no aparece', async () => {
+      const above = await createConsumableRecord('ALERTA-6', 6, 5);
+      const withoutThreshold = await createConsumableRecord('ALERTA-NULL', 0, null);
+
+      const response = await request(app)
+        .get('/api/inventory/low-stock')
+        .set('Authorization', authHeader(admin));
+      const rows = response.body.data.data;
+      expect(rows.some((row) => row.id === above.id)).toBe(false);
+      expect(rows.some((row) => row.id === withoutThreshold.id)).toBe(false);
+    });
+  });
 });
