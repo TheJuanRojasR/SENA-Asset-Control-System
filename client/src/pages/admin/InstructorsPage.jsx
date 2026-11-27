@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -10,14 +10,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
+  IconButton,
   MenuItem,
-  Switch,
   TextField,
   InputAdornment,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import LockResetIcon from '@mui/icons-material/LockReset';
+import BlockIcon from '@mui/icons-material/Block';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { motion } from 'framer-motion';
 import { PageContainer } from '../../components/ui/PageContainer.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
@@ -26,49 +30,47 @@ import { Toast } from '../../components/ui/Toast.jsx';
 import { useToast } from '../../hooks/useToast.js';
 import { usersApi } from '../../api/users.api.js';
 import { extractListData } from '../../utils/api.js';
-import { ROLES, ROLE_LABELS } from '../../constants/roles.js';
+import { ROLES } from '../../constants/roles.js';
 import { SHIFT_OPTIONS } from '../../constants/inventory.js';
+import { DOCUMENT_TYPES } from '../../constants/users.js';
 
+/**
+ * RN-USR-02: nombre, tipo de documento, número de documento, teléfono celular, turno y correo
+ * son obligatorios en el alta; la foto es opcional (AC-USR-01-2/3).
+ * RN-USR-09 / AC-USR-06-2: la aplicación nunca crea administradores, así que esta pantalla
+ * solo da de alta INSTRUCTOR y no ofrece selector de rol.
+ */
 const baseSchema = z.object({
   fullName: z.string().min(3, 'El nombre completo debe tener al menos 3 caracteres'),
   email: z.string().email('Correo electrónico inválido'),
-  role: z.enum([ROLES.ADMIN, ROLES.INSTRUCTOR], 'Selecciona un rol'),
-  shift: z.string().optional(),
-  phone: z.string().optional(),
+  documentType: z.string().min(2, 'Selecciona el tipo de documento'),
   document: z.string().min(5, 'El documento debe tener al menos 5 caracteres'),
-  isActive: z.boolean().default(true),
+  phone: z.string().min(7, 'El teléfono celular debe tener al menos 7 caracteres'),
+  shift: z.string().min(1, 'El turno es obligatorio'),
 });
 
-const createSchema = baseSchema
-  .extend({
-    password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  })
-  .refine((data) => data.role !== ROLES.INSTRUCTOR || !!data.shift, {
-    message: 'El turno es obligatorio para instructores',
-    path: ['shift'],
-  });
+const createSchema = baseSchema.extend({
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+});
 
-const editSchema = baseSchema
-  .extend({
-    password: z.string().optional(),
-  })
-  .refine((data) => data.role !== ROLES.INSTRUCTOR || !!data.shift, {
-    message: 'El turno es obligatorio para instructores',
-    path: ['shift'],
-  });
+// AC-USR-02-3: editar los datos del padrón no toca la contraseña; el restablecimiento es una
+// acción aparte (AC-USR-05-1).
+const editSchema = baseSchema;
 
 const emptyValues = {
   fullName: '',
   email: '',
   password: '',
-  role: ROLES.INSTRUCTOR,
   shift: '',
   phone: '',
   document: '',
-  isActive: true,
+  documentType: 'CC',
 };
 
 const breadcrumbs = [{ label: 'Inicio', to: '/admin' }, { label: 'Instructores' }];
+
+const documentTypeLabel = (value) =>
+  DOCUMENT_TYPES.find((type) => type.value === value)?.label || value || '-';
 
 export function InstructorsPage() {
   const queryClient = useQueryClient();
@@ -77,6 +79,8 @@ export function InstructorsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [passwordTarget, setPasswordTarget] = useState(null);
+  const [passwordValue, setPasswordValue] = useState('');
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users'],
@@ -110,13 +114,41 @@ export function InstructorsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id) => usersApi.remove(id),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      showToast('Instructor eliminado correctamente', 'success');
+      // RN-USR-08: si el instructor tiene historial, el backend lo desactiva y lo informa.
+      showToast(response?.data?.message || 'Instructor eliminado correctamente', 'success');
       setDeleteTarget(null);
     },
     onError: (error) => {
       showToast(error?.response?.data?.message || 'Error al eliminar instructor', 'error');
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, isActive }) => usersApi.updateStatus(id, isActive),
+    onSuccess: (response, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      showToast(
+        response?.data?.message ||
+          (variables.isActive ? 'Instructor reactivado' : 'Instructor desactivado'),
+        'success'
+      );
+    },
+    onError: (error) => {
+      showToast(error?.response?.data?.message || 'Error al cambiar el estado', 'error');
+    },
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ id, newPassword }) => usersApi.resetPassword(id, newPassword),
+    onSuccess: () => {
+      showToast('Contraseña restablecida correctamente', 'success');
+      setPasswordTarget(null);
+      setPasswordValue('');
+    },
+    onError: (error) => {
+      showToast(error?.response?.data?.message || 'Error al restablecer la contraseña', 'error');
     },
   });
 
@@ -149,31 +181,44 @@ export function InstructorsPage() {
   };
 
   const handleSubmit = (data) => {
-    const payload = { ...data };
-    if (payload.role !== ROLES.INSTRUCTOR) {
-      payload.shift = undefined;
-    }
     if (editing) {
-      if (!payload.password) delete payload.password;
+      const payload = { ...data };
+      delete payload.password;
       updateMutation.mutate({ id: editing.id, data: payload });
-    } else {
-      createMutation.mutate(payload);
+      return;
     }
+    createMutation.mutate({ ...data, role: ROLES.INSTRUCTOR });
   };
 
   const handleConfirmDelete = () => {
     if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
   };
 
+  const handleToggleStatus = (user) => {
+    statusMutation.mutate({ id: user.id, isActive: !user.isActive });
+  };
+
+  const handleConfirmResetPassword = () => {
+    if (passwordTarget && passwordValue.length >= 6) {
+      resetPasswordMutation.mutate({ id: passwordTarget.id, newPassword: passwordValue });
+    }
+  };
+
+  const closePasswordDialog = () => {
+    setPasswordTarget(null);
+    setPasswordValue('');
+  };
+
   const columns = [
+    {
+      field: 'documentType',
+      headerName: 'Tipo doc.',
+      width: 110,
+      render: (value) => documentTypeLabel(value),
+    },
     { field: 'document', headerName: 'Documento' },
     { field: 'fullName', headerName: 'Nombre completo' },
     { field: 'email', headerName: 'Correo' },
-    {
-      field: 'role',
-      headerName: 'Rol',
-      render: (value) => ROLE_LABELS[value] || value,
-    },
     {
       field: 'shift',
       headerName: 'Turno',
@@ -182,6 +227,44 @@ export function InstructorsPage() {
     { field: 'phone', headerName: 'Teléfono' },
     { field: 'isActive', headerName: 'Estado' },
   ];
+
+  const renderRowActions = (row) => (
+    <Box className="flex justify-end gap-1">
+      <IconButton
+        size="small"
+        onClick={() => handleOpenEdit(row)}
+        aria-label="Editar"
+        className="text-sena-green hover:text-sena-greenDark"
+      >
+        <EditIcon fontSize="small" />
+      </IconButton>
+      <IconButton
+        size="small"
+        onClick={() => handleToggleStatus(row)}
+        disabled={statusMutation.isPending}
+        aria-label={row.isActive ? 'Desactivar' : 'Reactivar'}
+        className={row.isActive ? 'text-amber-600 hover:text-amber-800' : 'text-sena-green'}
+      >
+        {row.isActive ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
+      </IconButton>
+      <IconButton
+        size="small"
+        onClick={() => setPasswordTarget(row)}
+        aria-label="Restablecer contraseña"
+        className="text-blue-600 hover:text-blue-800"
+      >
+        <LockResetIcon fontSize="small" />
+      </IconButton>
+      <IconButton
+        size="small"
+        onClick={() => setDeleteTarget(row)}
+        aria-label="Eliminar"
+        className="text-red-500 hover:text-red-700"
+      >
+        <DeleteIcon fontSize="small" />
+      </IconButton>
+    </Box>
+  );
 
   return (
     <PageContainer title="Gestión de instructores" breadcrumbs={breadcrumbs}>
@@ -219,8 +302,7 @@ export function InstructorsPage() {
         rows={filteredUsers}
         loading={isLoading}
         emptyMessage="No se encontraron instructores."
-        onEdit={handleOpenEdit}
-        onDelete={setDeleteTarget}
+        renderActions={renderRowActions}
       />
 
       <InstructorFormDialog
@@ -231,10 +313,40 @@ export function InstructorsPage() {
         loading={createMutation.isPending || updateMutation.isPending}
       />
 
+      <Dialog open={Boolean(passwordTarget)} onClose={closePasswordDialog} maxWidth="xs" fullWidth>
+        <DialogTitle className="font-bold text-sena-black">Restablecer contraseña</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label={`Nueva contraseña para ${passwordTarget?.fullName || ''}`}
+            type="password"
+            fullWidth
+            size="small"
+            value={passwordValue}
+            onChange={(event) => setPasswordValue(event.target.value)}
+            helperText="El instructor deberá iniciar sesión con esta contraseña; se cierran sus sesiones."
+          />
+        </DialogContent>
+        <DialogActions className="px-6 pb-4">
+          <Button onClick={closePasswordDialog} color="inherit" variant="outlined">
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmResetPassword}
+            disabled={passwordValue.length < 6 || resetPasswordMutation.isPending}
+            sx={{ backgroundColor: '#00A94F', '&:hover': { backgroundColor: '#007A3D' } }}
+          >
+            Restablecer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Eliminar instructor"
-        message={`¿Estás seguro de eliminar a ${deleteTarget?.fullName}? Esta acción no se puede deshacer.`}
+        message={`¿Estás seguro de eliminar a ${deleteTarget?.fullName}? Si tiene historial (solicitudes o préstamos), el sistema lo desactivará en lugar de borrarlo.`}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
         loading={deleteMutation.isPending}
@@ -257,9 +369,7 @@ function InstructorFormDialog({ open, onClose, initialData, onSubmit, loading })
   const {
     register,
     handleSubmit,
-    watch,
     reset,
-    control,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
@@ -274,13 +384,12 @@ function InstructorFormDialog({ open, onClose, initialData, onSubmit, loading })
               ...emptyValues,
               ...initialData,
               password: '',
+              documentType: initialData.documentType || 'CC',
             }
           : emptyValues
       );
     }
   }, [open, initialData, reset]);
-
-  const role = watch('role');
 
   return (
     <Dialog
@@ -329,20 +438,24 @@ function InstructorFormDialog({ open, onClose, initialData, onSubmit, loading })
               helperText={errors.password?.message}
             />
           )}
-          {isEditing && (
-            <TextField
-              {...register('password')}
-              label="Nueva contraseña (opcional)"
-              type="password"
-              fullWidth
-              size="small"
-              error={!!errors.password}
-              helperText={errors.password?.message}
-            />
-          )}
+          <TextField
+            {...register('documentType')}
+            select
+            label="Tipo de documento"
+            fullWidth
+            size="small"
+            error={!!errors.documentType}
+            helperText={errors.documentType?.message}
+          >
+            {DOCUMENT_TYPES.map((type) => (
+              <MenuItem key={type.value} value={type.value}>
+                {type.label}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             {...register('document')}
-            label="Documento"
+            label="Número de documento"
             fullWidth
             size="small"
             error={!!errors.document}
@@ -350,51 +463,27 @@ function InstructorFormDialog({ open, onClose, initialData, onSubmit, loading })
           />
           <TextField
             {...register('phone')}
-            label="Teléfono"
+            label="Teléfono celular"
             fullWidth
             size="small"
             error={!!errors.phone}
             helperText={errors.phone?.message}
           />
           <TextField
-            {...register('role')}
+            {...register('shift')}
             select
-            label="Rol"
+            label="Turno"
             fullWidth
             size="small"
-            error={!!errors.role}
-            helperText={errors.role?.message}
+            error={!!errors.shift}
+            helperText={errors.shift?.message}
           >
-            <MenuItem value={ROLES.INSTRUCTOR}>{ROLE_LABELS[ROLES.INSTRUCTOR]}</MenuItem>
-            <MenuItem value={ROLES.ADMIN}>{ROLE_LABELS[ROLES.ADMIN]}</MenuItem>
+            {SHIFT_OPTIONS.map((shift) => (
+              <MenuItem key={shift.value} value={shift.value}>
+                {shift.label}
+              </MenuItem>
+            ))}
           </TextField>
-          {role === ROLES.INSTRUCTOR && (
-            <TextField
-              {...register('shift')}
-              select
-              label="Turno"
-              fullWidth
-              size="small"
-              error={!!errors.shift}
-              helperText={errors.shift?.message}
-            >
-              {SHIFT_OPTIONS.map((shift) => (
-                <MenuItem key={shift.value} value={shift.value}>
-                  {shift.label}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
-          <Controller
-            name="isActive"
-            control={control}
-            render={({ field }) => (
-              <FormControlLabel
-                control={<Switch {...field} checked={field.value} />}
-                label="Activo"
-              />
-            )}
-          />
         </DialogContent>
         <DialogActions className="px-6 pb-4">
           <Button onClick={onClose} disabled={loading} variant="outlined" color="inherit">
