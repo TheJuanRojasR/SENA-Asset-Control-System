@@ -12,6 +12,16 @@ export const inventoryService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
+    // RN-INV-06 / AC-INV-04-2: un consumible se controla por cantidad y no admite
+    // unidades serializadas; aceptar una crearía un segundo mecanismo de stock.
+    if (item.isConsumable) {
+      throw new AppError(
+        'Un consumible no admite unidades serializadas',
+        HTTP_STATUS.CONFLICT,
+        'ITEM_IS_CONSUMABLE'
+      );
+    }
+
     if (data.environmentId) {
       const environment = await environmentRepository.findById(data.environmentId);
       if (!environment) {
