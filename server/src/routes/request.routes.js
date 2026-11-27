@@ -5,6 +5,7 @@ import { authorize } from '../middlewares/role.js';
 import { validateBody, validateRequest } from '../middlewares/validateRequest.js';
 import {
   createRequestSchema,
+  approveRequestSchema,
   rejectRequestSchema,
   requestIdParamSchema,
   listRequestsQuerySchema,
@@ -31,6 +32,7 @@ router.put(
   '/:id/approve',
   authorize('ADMIN'),
   validateRequest(requestIdParamSchema),
+  validateBody(approveRequestSchema),
   requestController.approve
 );
 router.put(

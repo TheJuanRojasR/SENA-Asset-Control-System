@@ -29,7 +29,11 @@ export const requestController = {
   }),
 
   approve: asyncHandler(async (req, res) => {
-    const result = await requestService.approveRequest(req.user.userId, Number(req.params.id));
+    const result = await requestService.approveRequest(
+      req.user.userId,
+      Number(req.params.id),
+      req.body || {}
+    );
     successResponse(res, result, 'Solicitud aprobada correctamente');
   }),
 

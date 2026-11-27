@@ -54,6 +54,7 @@ export const requestSelect = {
   requestDate: true,
   pickupDate: true,
   estimatedDate: true,
+  approvalNote: true,
   observations: true,
   approvedById: true,
   approvedAt: true,

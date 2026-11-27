@@ -134,7 +134,12 @@ export const requestService = {
     return { request };
   },
 
-  async approveRequest(adminId, id) {
+  /**
+   * RN-SOL-03/04/09: aprobar decide sobre el pedido. Puede reducir cantidades, nunca
+   * aumentarlas sobre lo solicitado, y no puede aprobar más de lo disponible para el rango.
+   * Si el total aprobado queda por debajo del solicitado, la nota es obligatoria.
+   */
+  async approveRequest(adminId, id, data = {}) {
     return prisma.$transaction(async (tx) => {
       const request = await requestRepository.findById(id, { tx });
       if (!request) {
@@ -142,8 +147,85 @@ export const requestService = {
       }
 
       if (request.status !== 'PENDING') {
-        throw new AppError('Solo se pueden aprobar solicitudes pendientes', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden aprobar solicitudes pendientes',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
+
+      const itemsById = new Map(request.requestItems.map((item) => [item.itemId, item]));
+      const desired = new Map((data.items || []).map((item) => [item.itemId, item.approvedQty]));
+
+      for (const itemId of desired.keys()) {
+        if (!itemsById.has(itemId)) {
+          throw new AppError(
+            'La solicitud no contiene ese ítem',
+            HTTP_STATUS.BAD_REQUEST,
+            'ITEM_NOT_IN_REQUEST'
+          );
+        }
+      }
+
+      const approvedByItem = new Map();
+      let totalRequested = 0;
+      let totalApproved = 0;
+
+      for (const requestItem of request.requestItems) {
+        const approvedQty = desired.has(requestItem.itemId)
+          ? desired.get(requestItem.itemId)
+          : requestItem.requestedQty;
+
+        if (approvedQty > requestItem.requestedQty) {
+          throw new AppError(
+            'No se puede aprobar más de lo solicitado',
+            HTTP_STATUS.BAD_REQUEST,
+            'APPROVED_QTY_EXCEEDS_REQUESTED'
+          );
+        }
+
+        approvedByItem.set(requestItem.id, approvedQty);
+        totalRequested += requestItem.requestedQty;
+        totalApproved += approvedQty;
+      }
+
+      if (totalApproved < totalRequested && !(data.note && data.note.trim())) {
+        throw new AppError(
+          'La nota es obligatoria cuando se reduce la cantidad aprobada',
+          HTTP_STATUS.BAD_REQUEST,
+          'APPROVAL_NOTE_REQUIRED'
+        );
+      }
+
+      // RN-SOL-09: techo del stock para el rango, descontando la propia reserva.
+      const range = rangeFromRequest(request);
+      for (const requestItem of request.requestItems) {
+        const approvedQty = approvedByItem.get(requestItem.id);
+        const item = await itemRepository.findById(requestItem.itemId);
+        const available = item?.isConsumable
+          ? item.stock ?? 0
+          : await countAvailableUnitsForRange(requestItem.itemId, range, tx, {
+              ignoreRequestId: request.id,
+            });
+
+        if (approvedQty > available) {
+          throw new AppError(
+            `Stock insuficiente para ${item?.name ?? 'el ítem'}. Disponible: ${available}, aprobado: ${approvedQty}`,
+            HTTP_STATUS.CONFLICT,
+            'INSUFFICIENT_STOCK'
+          );
+        }
+      }
+
+      await Promise.all(
+        request.requestItems.map((requestItem) =>
+          requestRepository.updateRequestItem(
+            requestItem.id,
+            { approvedQty: approvedByItem.get(requestItem.id) },
+            { tx }
+          )
+        )
+      );
 
       await requestRepository.update(
         id,
@@ -151,20 +233,9 @@ export const requestService = {
           status: 'APPROVED',
           approvedById: adminId,
           approvedAt: new Date(),
+          approvalNote: data.note?.trim() || null,
         },
         { tx }
-      );
-
-      await Promise.all(
-        request.requestItems.map((requestItem) =>
-          requestRepository.updateRequestItem(
-            requestItem.id,
-            {
-              approvedQty: requestItem.requestedQty,
-            },
-            { tx }
-          )
-        )
       );
 
       return { request: await requestRepository.findById(id, { tx }) };
@@ -673,10 +744,11 @@ function rangeFromRequest(request) {
   };
 }
 
-function unitHasOverlappingReservation(unit, range) {
+function unitHasOverlappingReservation(unit, range, ignoreRequestId = null) {
   return (unit.requestItemUnits || []).some((assignment) => {
     const request = assignment.requestItem?.request;
     if (!request) return false;
+    if (ignoreRequestId && request.id === ignoreRequestId) return false;
     if (!ACTIVE_RESERVATION_STATUSES.has(request.status)) return false;
     const startMs = toUtcDay(request.pickupDate ?? request.requestDate);
     const endMs = toUtcDay(request.estimatedDate ?? request.pickupDate ?? request.requestDate);
@@ -689,7 +761,7 @@ function unitHasOverlappingReservation(unit, range) {
  * estado del conjunto padre. RN-INV-33 bloquea unidades en trámite; RN-PRE-15 exceptúa las
  * piezas de un conjunto perdido.
  */
-function unitIsFreeForRange(unit, range) {
+function unitIsFreeForRange(unit, range, { ignoreRequestId = null } = {}) {
   if (!range) return unit.status === 'AVAILABLE';
   if (unit.status !== 'AVAILABLE' && unit.status !== 'RESERVED') return false;
   if (unit.disposalInProgress || unit.declaredLost) return false;
@@ -706,10 +778,10 @@ function unitIsFreeForRange(unit, range) {
     return false;
   }
 
-  return !unitHasOverlappingReservation(unit, range);
+  return !unitHasOverlappingReservation(unit, range, ignoreRequestId);
 }
 
-async function countAvailableUnitsForRange(itemId, range, tx) {
+async function countAvailableUnitsForRange(itemId, range, tx, { ignoreRequestId = null } = {}) {
   const units = await requestRepository.findUnitsForRange(itemId, { tx });
-  return units.filter((unit) => unitIsFreeForRange(unit, range)).length;
+  return units.filter((unit) => unitIsFreeForRange(unit, range, { ignoreRequestId })).length;
 }

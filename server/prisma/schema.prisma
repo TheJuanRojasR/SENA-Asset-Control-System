@@ -258,6 +258,8 @@ model Request {
   requestDate     DateTime      @default(now())
   // RN-SOL-01 / RN-NEG-04: fecha de retiro y rango de reserva [pickupDate, estimatedDate].
   pickupDate      DateTime?
+  // RN-SOL-04: nota del administrador cuando aprueba menos de lo solicitado.
+  approvalNote    String?       @db.Text
   estimatedDate   DateTime?
   observations    String?       @db.Text
   approvedById    Int?
