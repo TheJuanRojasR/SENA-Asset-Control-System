@@ -1156,4 +1156,285 @@ describe('Inventory endpoints', () => {
       expect(storedRequest.status).not.toBe('DELIVERED');
     });
   });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-05 — Integridad del conjunto (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-05 — Integridad del conjunto', () => {
+    const createComposite = async (name, components) => {
+      const compound = await prismaTest.item.create({
+        data: { code: `INT-${Date.now()}-${Math.random()}`, name, categoryId: category.id },
+      });
+      for (const component of components) {
+        await prismaTest.itemComponent.create({
+          data: {
+            parentItemId: compound.id,
+            childItemId: component.item.id,
+            isRequired: component.isRequired ?? true,
+            quantity: component.quantity ?? 1,
+          },
+        });
+      }
+      return compound;
+    };
+    const unit = (targetItem, serial) =>
+      prismaTest.inventoryUnit.create({
+        data: { itemId: targetItem.id, serialNumber: serial, status: 'AVAILABLE', physicalState: 'OPERATIVO' },
+      });
+    const assemble = (parentId, childUnitIds) =>
+      request(app)
+        .post(`/api/inventory/${parentId}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds });
+    const integrity = (unitId) =>
+      request(app).get(`/api/inventory/${unitId}/detail`).set('Authorization', authHeader(admin));
+
+    it('AC-INV-05-1 — Un conjunto completo se informa completo y un opcional ausente solo se documenta', async () => {
+      const required = await prismaTest.item.create({
+        data: { code: 'REQ-1', name: 'Obligatorio', categoryId: category.id },
+      });
+      const optional = await prismaTest.item.create({
+        data: { code: 'OPT-1', name: 'Opcional', categoryId: category.id },
+      });
+      const compound = await createComposite('Con requerido y opcional', [
+        { item: required },
+        { item: optional, isRequired: false },
+      ]);
+      const parent = await unit(compound, 'INT-U-001');
+      const requiredUnit = await unit(required, 'INT-R-001');
+      await assemble(parent.id, [requiredUnit.id]);
+
+      const response = await integrity(parent.id);
+      expect(response.status).toBe(200);
+      expect(response.body.data.unit.isComplete).toBe(true);
+      expect(response.body.data.unit.missingComponents).toHaveLength(0);
+      const optionalMissing = response.body.data.unit.optionalMissing;
+      expect(optionalMissing.some((entry) => entry.childItemId === optional.id)).toBe(true);
+    });
+
+    it('AC-INV-05-2 — Una pieza prestada suelta se informa como faltante con su tenedor', async () => {
+      const piece = await prismaTest.item.create({
+        data: { code: 'PZA-1', name: 'Pieza', categoryId: category.id },
+      });
+      const compound = await createComposite('Con pieza extraíble', [{ item: piece }]);
+      const parent = await unit(compound, 'INT-U-002');
+      const pieceUnit = await unit(piece, 'INT-P-001');
+      await assemble(parent.id, [pieceUnit.id]);
+
+      const created = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: piece.id, requestedQty: 1 }] });
+      expect(created.status).toBe(201);
+
+      const response = await integrity(parent.id);
+      expect(response.body.data.unit.isComplete).toBe(false);
+      const missing = response.body.data.unit.missingComponents.find(
+        (entry) => entry.childItemId === piece.id
+      );
+      expect(missing).toBeDefined();
+      expect(missing.holder.id).toBe(instructor.id);
+    });
+
+    it('AC-INV-05-3 — Se listan solo los conjuntos funcionalmente incompletos', async () => {
+      const piece = await prismaTest.item.create({
+        data: { code: 'LST-1', name: 'Pieza lista', categoryId: category.id },
+      });
+      const compound = await createComposite('Conjunto listable', [{ item: piece }]);
+
+      const completeParent = await unit(compound, 'LST-C-001');
+      const completePiece = await unit(piece, 'LST-CP-001');
+      await assemble(completeParent.id, [completePiece.id]);
+
+      const incompleteParent = await unit(compound, 'LST-I-001');
+      const unusedPiece = await unit(piece, 'LST-IP-001');
+      expect(unusedPiece).toBeDefined();
+
+      const response = await request(app)
+        .get('/api/inventory/incomplete-assemblies')
+        .set('Authorization', authHeader(admin));
+      expect(response.status).toBe(200);
+      const ids = response.body.data.data.map((row) => row.id);
+      expect(ids).toContain(incompleteParent.id);
+      expect(ids).not.toContain(completeParent.id);
+      const incompleteRow = response.body.data.data.find((row) => row.id === incompleteParent.id);
+      expect(incompleteRow.missingComponents.some((entry) => entry.childItemId === piece.id)).toBe(
+        true
+      );
+    });
+
+    it('AC-INV-05-4 — La completitud se evalúa de forma recursiva', async () => {
+      const itemC = await prismaTest.item.create({
+        data: { code: 'REC-C', name: 'Pieza C', categoryId: category.id },
+      });
+      const itemB = await prismaTest.item.create({
+        data: { code: 'REC-B', name: 'Compuesto B', categoryId: category.id },
+      });
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: itemB.id, childItemId: itemC.id, isRequired: true },
+      });
+      const itemA = await prismaTest.item.create({
+        data: { code: 'REC-A', name: 'Compuesto A', categoryId: category.id },
+      });
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: itemA.id, childItemId: itemB.id, isRequired: true },
+      });
+
+      const unitA = await unit(itemA, 'REC-A-001');
+      const unitB = await unit(itemB, 'REC-B-001');
+      await unit(itemC, 'REC-C-001');
+      await assemble(unitA.id, [unitB.id]);
+
+      const response = await integrity(unitA.id);
+      expect(response.body.data.unit.isComplete).toBe(false);
+      expect(
+        response.body.data.unit.missingComponents.some((entry) => entry.childItemId === itemC.id)
+      ).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-07 — Listar todas las unidades (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-07 — Listado de unidades', () => {
+    const createUnitRecord = (targetItem, serial, overrides = {}) =>
+      prismaTest.inventoryUnit.create({
+        data: {
+          itemId: targetItem.id,
+          serialNumber: serial,
+          status: 'AVAILABLE',
+          physicalState: 'OPERATIVO',
+          ...overrides,
+        },
+      });
+
+    it('AC-INV-07-1 — Los componentes de un conjunto aparecen en el listado', async () => {
+      const piece = await prismaTest.item.create({
+        data: { code: 'L7-1', name: 'Pieza listada', categoryId: category.id },
+      });
+      const compound = await prismaTest.item.create({
+        data: { code: 'L7-C', name: 'Compuesto listado', categoryId: category.id },
+      });
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: compound.id, childItemId: piece.id, isRequired: true },
+      });
+      const parent = await createUnitRecord(compound, 'L7-P-001');
+      const child = await createUnitRecord(piece, 'L7-C-001');
+      await request(app)
+        .post(`/api/inventory/${parent.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [child.id] });
+
+      const response = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      expect(response.status).toBe(200);
+      expect(response.body.data.data.some((row) => row.id === child.id)).toBe(true);
+    });
+
+    it('AC-INV-07-2 — Equipos del SENA y donados en el mismo listado', async () => {
+      const senaUnit = await createUnitRecord(item, 'TEN-SENA-001');
+      const donated = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(admin))
+        .send({ itemId: item.id, serialNumber: 'TEN-DON-001', ownership: 'DONATED' });
+      expect(donated.status).toBe(201);
+
+      const response = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      const rows = response.body.data.data;
+      const senaRow = rows.find((row) => row.id === senaUnit.id);
+      const donatedRow = rows.find((row) => row.serialNumber === 'TEN-DON-001');
+      expect(senaRow.ownership).toBe('SENA');
+      expect(donatedRow.ownership).toBe('DONATED');
+    });
+
+    it('AC-INV-07-3 — Cada unidad informa si está dentro de un conjunto', async () => {
+      const piece = await prismaTest.item.create({
+        data: { code: 'L7-3', name: 'Pieza interior', categoryId: category.id },
+      });
+      const compound = await prismaTest.item.create({
+        data: { code: 'L7-C3', name: 'Compuesto interior', categoryId: category.id },
+      });
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: compound.id, childItemId: piece.id, isRequired: true },
+      });
+      const parent = await createUnitRecord(compound, 'L7-3-P');
+      const child = await createUnitRecord(piece, 'L7-3-C');
+      const loose = await createUnitRecord(item, 'L7-3-L');
+      await request(app)
+        .post(`/api/inventory/${parent.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [child.id] });
+
+      const response = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      const rows = response.body.data.data;
+      const childRow = rows.find((row) => row.id === child.id);
+      const looseRow = rows.find((row) => row.id === loose.id);
+      expect(childRow.parentUnitId).toBe(parent.id);
+      expect(childRow.parentUnit.id).toBe(parent.id);
+      expect(looseRow.parentUnitId).toBeNull();
+    });
+
+    it('AC-INV-07-4 — Consumibles y serializados en listas separadas', async () => {
+      const consumable = await request(app)
+        .post('/api/items')
+        .set('Authorization', authHeader(admin))
+        .send({
+          code: 'L7-CONS',
+          name: 'Consumible separado',
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'LITRO',
+          initialQty: 5,
+        });
+      expect(consumable.status).toBe(201);
+      const unitRow = await createUnitRecord(item, 'L7-SER-001');
+
+      const units = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      expect(units.body.data.data.some((row) => row.id === unitRow.id)).toBe(true);
+      expect(units.body.data.data.some((row) => row.itemId === consumable.body.data.item.id)).toBe(
+        false
+      );
+
+      const consumableList = await request(app)
+        .get('/api/items')
+        .query({ isConsumable: 'true' })
+        .set('Authorization', authHeader(admin));
+      expect(
+        consumableList.body.data.data.every((row) => row.isConsumable === true)
+      ).toBe(true);
+      expect(
+        consumableList.body.data.data.some(
+          (row) => row.id === consumable.body.data.item.id
+        )
+      ).toBe(true);
+
+      const serializedList = await request(app)
+        .get('/api/items')
+        .query({ isConsumable: 'false' })
+        .set('Authorization', authHeader(admin));
+      expect(serializedList.body.data.data.every((row) => row.isConsumable === false)).toBe(true);
+    });
+
+    it('AC-INV-07-5 — El listado de unidades es paginado y devuelve el total', async () => {
+      for (let index = 0; index < 25; index += 1) {
+        await createUnitRecord(item, `L7-PG-${String(index).padStart(3, '0')}`);
+      }
+
+      const response = await request(app)
+        .get('/api/inventory')
+        .query({ page: 1, limit: 20 })
+        .set('Authorization', authHeader(admin));
+      expect(response.status).toBe(200);
+      expect(response.body.data.data).toHaveLength(20);
+      expect(response.body.data.meta.total).toBeGreaterThanOrEqual(25);
+    });
+  });
 });
