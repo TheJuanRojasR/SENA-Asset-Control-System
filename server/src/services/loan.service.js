@@ -13,8 +13,16 @@ import { HTTP_STATUS } from '../constants/httpStatus.js';
 const mapConditionToPhysicalState = (functioning) =>
   functioning === 'FUNCIONA' ? 'GOOD' : 'REGULAR';
 
-const needsDamageTask = ({ functioning, damageState }) =>
-  functioning !== 'FUNCIONA' || damageState === 'DANADO';
+// RN-PRE-13 nombra tres disparadores: falta una pieza, algo no funciona o algo vuelve
+// dañado. La pieza faltante no tiene campo propio: se reporta en la descripción libre
+// (AC-PRE-03-7), así que se reconoce por su texto.
+const reportsMissingPiece = (description) =>
+  /(falta|faltante|sin pieza|piezas? falt)/i.test(description || '');
+
+const needsDamageTask = ({ functioning, damageState, description }) =>
+  functioning !== 'FUNCIONA' ||
+  damageState === 'DANADO' ||
+  reportsMissingPiece(description);
 
 const todayUtc = () => {
   const now = new Date();
@@ -134,7 +142,7 @@ export const loanService = {
     return prisma.$transaction(async (tx) => {
       const assignments = await loanRepository.findBySerials(serials, { tx });
 
-      if (assignments.length !== serials.length) {
+      if (assignments.length === 0) {
         throw new AppError(
           'Una o más unidades no existen',
           HTTP_STATUS.NOT_FOUND,
@@ -142,12 +150,42 @@ export const loanService = {
         );
       }
 
-      const bySerial = new Map(
-        assignments.map((assignment) => [assignment.inventoryUnit.serialNumber, assignment])
-      );
+      // Una unidad puede tener historial de préstamos anteriores; la devolución se aplica
+      // a la asignación activa (no devuelta y no perdida).
+      const allBySerial = new Map();
+      const activeBySerial = new Map();
+      for (const assignment of assignments) {
+        const serial = assignment.inventoryUnit.serialNumber;
+        if (!allBySerial.has(serial)) allBySerial.set(serial, assignment);
+        if (!assignment.returnedAt && !assignment.lostAt) {
+          activeBySerial.set(serial, assignment);
+        }
+      }
 
       for (const entry of returns) {
-        const assignment = bySerial.get(entry.serialNumber);
+        if (!allBySerial.has(entry.serialNumber)) {
+          throw new AppError(
+            'Una o más unidades no existen',
+            HTTP_STATUS.NOT_FOUND,
+            'UNITS_NOT_FOUND'
+          );
+        }
+        const assignment = activeBySerial.get(entry.serialNumber);
+        if (!assignment) {
+          const previous = allBySerial.get(entry.serialNumber);
+          if (previous?.returnedAt) {
+            throw new AppError(
+              `La unidad ${entry.serialNumber} ya fue devuelta`,
+              HTTP_STATUS.CONFLICT,
+              'UNIT_ALREADY_RETURNED'
+            );
+          }
+          throw new AppError(
+            `La unidad ${entry.serialNumber} fue declarada perdida`,
+            HTTP_STATUS.CONFLICT,
+            'UNIT_LOST'
+          );
+        }
 
         if (requestId && assignment.requestItem.requestId !== requestId) {
           throw new AppError(
@@ -183,7 +221,7 @@ export const loanService = {
       const affectedRequestIds = new Set();
 
       for (const entry of returns) {
-        const assignment = bySerial.get(entry.serialNumber);
+        const assignment = activeBySerial.get(entry.serialNumber);
         const physicalState = mapConditionToPhysicalState(entry.functioning);
 
         await loanRepository.updateInventoryUnit(
@@ -248,7 +286,159 @@ export const loanService = {
     });
   },
 
+  // ---- US-PRE-03: tareas por daño ----
+  async listDamageTasks(filters, pagination) {
+    const result = await loanRepository.findDamageTasks(filters, pagination);
+    return {
+      data: result.data.map((task) => ({
+        id: task.id,
+        status: task.status,
+        description: task.description,
+        createdAt: task.createdAt,
+        resolvedAt: task.resolvedAt,
+        resolutionNote: task.resolutionNote,
+        inventoryUnit: {
+          id: task.inventoryUnit.id,
+          serialNumber: task.inventoryUnit.serialNumber,
+          item: {
+            id: task.inventoryUnit.item.id,
+            code: task.inventoryUnit.item.code,
+            name: task.inventoryUnit.item.name,
+          },
+        },
+        requester:
+          task.requestItemUnit?.requestItem?.request?.requester ?? null,
+        createdBy: task.createdBy,
+        resolvedBy: task.resolvedBy,
+      })),
+      meta: result.meta,
+    };
+  },
+
+  /** RN-PRE-09: la tarea la resuelve el administrador; una resuelta no se reabre. */
+  async resolveDamageTask(adminId, taskId, { resolutionNote }) {
+    const task = await loanRepository.findDamageTaskById(taskId);
+    if (!task) {
+      throw new AppError('Tarea no encontrada', HTTP_STATUS.NOT_FOUND, 'DAMAGE_TASK_NOT_FOUND');
+    }
+    if (task.status === 'RESOLVED') {
+      throw new AppError(
+        'La tarea ya está resuelta y no se reabre',
+        HTTP_STATUS.CONFLICT,
+        'DAMAGE_TASK_ALREADY_RESOLVED'
+      );
+    }
+
+    const resolved = await loanRepository.resolveDamageTask(taskId, {
+      resolvedById: adminId,
+      resolutionNote,
+    });
+    return { task: { id: resolved.id, status: resolved.status, resolutionNote: resolved.resolutionNote } };
+  },
+
+  // ---- US-PRE-05: pérdida declarada ----
+  /**
+   * RN-PRE-15 / RN-INV-14 / RN-INV-19: la pérdida sigue el camino de la tenencia.
+   * SENA: trámite de baja (sigue existiendo, bloqueado). Donada: baja inmediata.
+   * En ambos casos sale del inventario activo y no bloquea disponibilidad.
+   */
+  async declareLoss(adminId, { serialNumber, reason, requestId }) {
+    return prisma.$transaction(async (tx) => {
+      const [assignment] = await loanRepository.findBySerials([serialNumber], { tx });
+      if (!assignment) {
+        throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'UNITS_NOT_FOUND');
+      }
+      if (requestId && assignment.requestItem.requestId !== requestId) {
+        throw new AppError(
+          'La unidad no está prestada en esa solicitud',
+          HTTP_STATUS.CONFLICT,
+          'UNIT_NOT_IN_REQUEST'
+        );
+      }
+      if (assignment.returnedAt) {
+        throw new AppError(
+          'La unidad ya fue devuelta',
+          HTTP_STATUS.CONFLICT,
+          'UNIT_ALREADY_RETURNED'
+        );
+      }
+      if (assignment.lostAt) {
+        throw new AppError(
+          'La unidad ya fue declarada perdida',
+          HTTP_STATUS.CONFLICT,
+          'UNIT_ALREADY_LOST'
+        );
+      }
+      if (assignment.inventoryUnit.status !== 'LOANED') {
+        throw new AppError(
+          'La unidad no está en préstamo',
+          HTTP_STATUS.CONFLICT,
+          'UNIT_NOT_LOANED'
+        );
+      }
+
+      const ownership = assignment.requestItem.item.ownership;
+      const donated = ownership === 'DONATED';
+
+      await loanRepository.updateInventoryUnit(
+        assignment.inventoryUnitId,
+        donated
+          ? { declaredLost: true, disposalInProgress: false, status: 'DISPOSED' }
+          : { declaredLost: true, disposalInProgress: true },
+        { tx }
+      );
+
+      await loanRepository.registerLoss(
+        assignment.id,
+        { lostById: adminId, lostReason: reason },
+        { tx }
+      );
+
+      await loanRepository.createMovement(
+        {
+          type: 'DISPOSAL',
+          itemId: assignment.requestItem.itemId,
+          inventoryUnitId: assignment.inventoryUnitId,
+          quantity: 1,
+          responsibleId: adminId,
+          requestId: assignment.requestItem.requestId,
+          notes: reason,
+        },
+        { tx }
+      );
+
+      await recalculateRequestStatus(assignment.requestItem.requestId, { tx });
+
+      const updated = await tx.requestItemUnit.findUnique({
+        where: { id: assignment.id },
+        include: {
+          lostBy: { select: { id: true, fullName: true } },
+          requestItem: {
+            include: {
+              request: { include: { requester: { select: { id: true, fullName: true } } } },
+            },
+          },
+        },
+      });
+
+      return {
+        lost: {
+          serialNumber,
+          lostAt: updated.lostAt,
+          lostBy: updated.lostBy,
+          reason: updated.lostReason,
+          requester: updated.requestItem.request.requester,
+          ownershipPath: donated ? 'DONATED_IMMEDIATE' : 'SENA_PROCESS',
+        },
+      };
+    });
+  },
+
   async listReturns(filters, pagination) {
+    // RN-MOV-02: el filtro por tipo de movimiento deja solo las devoluciones (RETURN).
+    if (filters.movementType && filters.movementType !== 'RETURN') {
+      return { data: [], meta: { page: pagination.page, limit: pagination.limit, total: 0, totalPages: 0 } };
+    }
     const result = await loanRepository.findReturns(filters, pagination);
     return { data: result.data.map(mapReturn), meta: result.meta };
   },

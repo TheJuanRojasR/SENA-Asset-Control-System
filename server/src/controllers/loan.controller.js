@@ -22,6 +22,7 @@ export const loanController = {
       itemId: req.query.itemId ? Number(req.query.itemId) : undefined,
       from: req.query.from,
       to: req.query.to,
+      movementType: req.query.movementType,
     };
     const pagination = {
       page: Number(req.query.page) || 1,
@@ -29,6 +30,35 @@ export const loanController = {
     };
     const result = await loanService.listReturns(filters, pagination);
     successResponse(res, result);
+  }),
+
+  listDamageTasks: asyncHandler(async (req, res) => {
+    const filters = {
+      status: req.query.status,
+      inventoryUnitId: req.query.inventoryUnitId
+        ? Number(req.query.inventoryUnitId)
+        : undefined,
+    };
+    const pagination = {
+      page: Number(req.query.page) || 1,
+      limit: Number(req.query.limit) || 20,
+    };
+    const result = await loanService.listDamageTasks(filters, pagination);
+    successResponse(res, result);
+  }),
+
+  resolveDamageTask: asyncHandler(async (req, res) => {
+    const result = await loanService.resolveDamageTask(
+      req.user.userId,
+      Number(req.params.id),
+      req.body
+    );
+    successResponse(res, result, 'Tarea de daño resuelta');
+  }),
+
+  declareLoss: asyncHandler(async (req, res) => {
+    const result = await loanService.declareLoss(req.user.userId, req.body);
+    successResponse(res, result, 'Pérdida declarada correctamente');
   }),
 
   listPending: asyncHandler(async (req, res) => {
