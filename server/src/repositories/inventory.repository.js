@@ -118,6 +118,8 @@ export const inventoryRepository = {
         name: true,
         minStock: true,
         unit: true,
+        isConsumable: true,
+        stock: true,
         _count: {
           select: {
             inventoryUnits: {
@@ -131,7 +133,8 @@ export const inventoryRepository = {
 
     return items.map((item) => ({
       ...item,
-      availableStock: item._count.inventoryUnits,
+      // RN-INV-06: el consumible se mide por cantidad; el serializable por unidades libres.
+      availableStock: item.isConsumable ? item.stock : item._count.inventoryUnits,
       _count: undefined,
     }));
   },

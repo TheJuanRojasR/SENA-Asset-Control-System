@@ -4,40 +4,6 @@ import { prisma } from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
 import { HTTP_STATUS } from '../constants/httpStatus.js';
 
-const itemListSelect = {
-  id: true,
-  code: true,
-  name: true,
-  description: true,
-  imageUrl: true,
-  categoryId: true,
-  minStock: true,
-  unit: true,
-  isConsumable: true,
-  isActive: true,
-  createdAt: true,
-  updatedAt: true,
-  category: {
-    select: {
-      id: true,
-      name: true,
-    },
-  },
-  inventoryUnits: {
-    select: {
-      id: true,
-      serialNumber: true,
-      environmentId: true,
-      status: true,
-      physicalState: true,
-      notes: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-    orderBy: { serialNumber: 'asc' },
-  },
-};
-
 export const itemService = {
   async listItems(filters, pagination) {
     const includeInactive = filters.includeInactive !== false;
@@ -79,11 +45,33 @@ export const itemService = {
       throw new AppError('Ya existe un ítem con ese código', HTTP_STATUS.CONFLICT, 'ITEM_CODE_EXISTS');
     }
 
-    const { components, ...itemData } = data;
+    const { components, initialQty = 0, isConsumable = false, ...rest } = data;
+
+    // RN-INV-46: solo un elemento donado puede ser consumible.
+    const ownership = rest.ownership || 'SENA';
+    if (isConsumable && ownership !== 'DONATED') {
+      throw new AppError(
+        'Solo un elemento donado puede registrarse como consumible',
+        HTTP_STATUS.CONFLICT,
+        'CONSUMABLE_NOT_DONATED'
+      );
+    }
+
     await validateComponents(null, components);
 
+    // RN-INV-06 / RN-INV-12: el consumible nace con su cantidad inicial y cero unidades.
+    // RN-INV-40: un serializable no autogenera unidades ni seriales, aunque llegue initialQty.
+    const itemData = {
+      ...rest,
+      isConsumable,
+      ownership,
+      unit: rest.unit || 'UNIDAD',
+      minStock: rest.minStock ?? null,
+      stock: isConsumable ? Number(initialQty) || 0 : 0,
+    };
+
     const createdId = await prisma.$transaction(async (tx) => {
-      const created = await createItemWithInitialStock(tx, itemData);
+      const created = await tx.item.create({ data: itemData, select: { id: true } });
       if (components && components.length > 0) {
         await itemRepository.setComponents(created.id, components, { tx });
       }
@@ -106,7 +94,7 @@ export const itemService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    const { components, initialQty, ...itemData } = data;
+    const { components, ...itemData } = data;
     await validateComponents(id, components);
 
     if (itemData.code) {
@@ -126,13 +114,6 @@ export const itemService = {
     const updated = await prisma.$transaction(async (tx) => {
       if (components) {
         await itemRepository.setComponents(id, components, { tx });
-      }
-      if (typeof initialQty === 'number') {
-        await reconcileInitialQty(tx, {
-          itemId: id,
-          code: itemData.code || item.code,
-          targetQty: initialQty,
-        });
       }
       return itemRepository.update(id, itemData, { tx });
     });
@@ -184,28 +165,7 @@ export const itemService = {
 
 };
 
-function buildInitialUnits(code, initialQty) {
-  const units = [];
-  for (let i = 1; i <= initialQty; i += 1) {
-    units.push({ serialNumber: `${code}-${String(i).padStart(3, '0')}` });
-  }
-  return units;
-}
 
-async function createItemWithInitialStock(tx, data) {
-  const { initialQty, ...itemData } = data;
-  const inventoryUnits = buildInitialUnits(itemData.code, initialQty);
-
-  const item = await tx.item.create({
-    data: {
-      ...itemData,
-      inventoryUnits: inventoryUnits.length > 0 ? { create: inventoryUnits } : undefined,
-    },
-    select: itemListSelect,
-  });
-
-  return item;
-}
 
 async function validateComponents(parentItemId, components) {
   if (!components || components.length === 0) return;
@@ -229,39 +189,12 @@ async function validateComponents(parentItemId, components) {
 }
 
 async function calculateStock(item) {
+  // RN-INV-06: el stock del consumible es su cantidad; el del serializable se cuenta por
+  // unidades disponibles (nunca por seriales autogenerados).
+  if (item.isConsumable) return item.stock ?? 0;
   return itemRepository.countAvailableUnits(item.id);
 }
 
-async function reconcileInitialQty(tx, { itemId, code, targetQty }) {
-  const units = await tx.inventoryUnit.findMany({
-    where: { itemId },
-    select: { id: true, serialNumber: true, status: true },
-    orderBy: { serialNumber: 'asc' },
-  });
-
-  const availableUnits = units.filter((u) => u.status === 'AVAILABLE');
-  const diff = targetQty - availableUnits.length;
-  if (diff === 0) return;
-
-  if (diff < 0) {
-    const toDelete = availableUnits.slice(diff).map((u) => u.id);
-    await tx.inventoryUnit.deleteMany({ where: { id: { in: toDelete } } });
-    return;
-  }
-
-  const maxSuffix = units.reduce((max, unit) => {
-    const match = unit.serialNumber.match(/-(\d+)$/);
-    if (!match) return max;
-    return Math.max(max, Number(match[1]));
-  }, 0);
-
-  const newUnits = Array.from({ length: diff }, (_, index) => {
-    const next = maxSuffix + index + 1;
-    return { itemId, serialNumber: `${code}-${String(next).padStart(3, '0')}` };
-  });
-
-  await tx.inventoryUnit.createMany({ data: newUnits });
-}
 
 /**
  * Enriquece un ítem con su disponibilidad efectiva.

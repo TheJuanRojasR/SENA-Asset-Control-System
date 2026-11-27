@@ -140,7 +140,10 @@ export const inventoryService = {
 
   async getLowStockItems() {
     const items = await inventoryRepository.findItemsWithAvailableStock();
-    const lowStock = items.filter((item) => item.availableStock <= item.minStock);
+    // RN-INV-44: cada elemento se compara contra SU umbral y uno sin umbral no alerta.
+    const lowStock = items.filter(
+      (item) => item.minStock !== null && item.availableStock <= item.minStock
+    );
     return { data: lowStock };
   },
 
