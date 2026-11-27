@@ -2,13 +2,18 @@ import { z } from 'zod';
 
 export const createEnvironmentSchema = z.object({
   code: z.string().min(1, 'El código es requerido').max(50, 'El código no puede superar 50 caracteres'),
-  name: z.string().min(1, 'El nombre es requerido').max(255, 'El nombre no puede superar 255 caracteres'),
+  // AC-AMB-01-2: un nombre vacío o de solo espacios no es un nombre (RN-CTX-07).
+  name: z
+    .string()
+    .trim()
+    .min(1, 'El nombre es requerido')
+    .max(255, 'El nombre no puede superar 255 caracteres'),
   location: z.string().max(255, 'La ubicación no puede superar 255 caracteres').optional(),
 });
 
 export const updateEnvironmentSchema = z.object({
   code: z.string().min(1).max(50).optional(),
-  name: z.string().min(1).max(255).optional(),
+  name: z.string().trim().min(1, 'El nombre es requerido').max(255).optional(),
   location: z.string().max(255).optional(),
 });
 

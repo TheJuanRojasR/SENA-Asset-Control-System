@@ -14,8 +14,8 @@ export const environmentController = {
       search: req.query.search,
     };
     const pagination = {
-      page: req.query.page,
-      limit: req.query.limit,
+      page: Number(req.query.page) || 1,
+      limit: Number(req.query.limit) || 20,
     };
     const result = await environmentService.listEnvironments(filters, pagination);
     successResponse(res, result);
