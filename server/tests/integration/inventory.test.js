@@ -2053,6 +2053,7 @@ describe('Inventory endpoints', () => {
         itemId: parentItem.id,
         serialNumber: `${parentCode}-U-001`,
         ownership: 'SENA',
+        ...(parentState ? { physicalState: parentState } : {}),
       });
       const pieceUnit = await createUnitViaApi({
         itemId: pieceItem.id,
@@ -2063,12 +2064,6 @@ describe('Inventory endpoints', () => {
         .post(`/api/inventory/${parentUnit.body.data.unit.id}/assemble`)
         .set('Authorization', authHeader(admin))
         .send({ childUnitIds: [pieceUnit.body.data.unit.id] });
-      if (parentState) {
-        await request(app)
-          .put(`/api/inventory/${parentUnit.body.data.unit.id}`)
-          .set('Authorization', authHeader(admin))
-          .send({ physicalState: parentState });
-      }
       return {
         parentItem,
         pieceItem,
@@ -2302,6 +2297,282 @@ describe('Inventory endpoints', () => {
       const rows = response.body.data.data;
       expect(rows.some((row) => row.id === above.id)).toBe(false);
       expect(rows.some((row) => row.id === withoutThreshold.id)).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-11 — Ubicación de la unidad (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-11 — Ubicación', () => {
+    const createEnvironmentRecord = (code, name) =>
+      prismaTest.environment.create({ data: { code, name } });
+    const createItemRecord = (code, name) =>
+      prismaTest.item.create({ data: { code, name, categoryId: category.id } });
+    const createUnitViaApi = (payload) =>
+      request(app).post('/api/inventory').set('Authorization', authHeader(admin)).send(payload);
+    const getUnit = (unitId) =>
+      request(app).get(`/api/inventory/${unitId}`).set('Authorization', authHeader(admin));
+
+    it('AC-INV-11-1 — Toda unidad nace en el Ambiente 104', async () => {
+      const base = await createEnvironmentRecord('104', 'Ambiente 104');
+      const target = await createItemRecord('UBI-1', 'Equipo con ubicación');
+
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'UBI-1-001',
+        ownership: 'SENA',
+      });
+      expect(created.status).toBe(201);
+      const stored = await getUnit(created.body.data.unit.id);
+      expect(stored.body.data.unit.environmentId).toBe(base.id);
+      expect(stored.body.data.unit.environment.name).toBe('Ambiente 104');
+    });
+
+    it('AC-INV-11-2 — El administrador cambia la ubicación de la unidad', async () => {
+      await createEnvironmentRecord('104', 'Ambiente 104');
+      const destination = await createEnvironmentRecord('205', 'Ambiente 205');
+      const target = await createItemRecord('UBI-2', 'Equipo a trasladar');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'UBI-2-001',
+        ownership: 'SENA',
+      });
+
+      const response = await request(app)
+        .put(`/api/inventory/${created.body.data.unit.id}`)
+        .set('Authorization', authHeader(admin))
+        .send({ environmentId: destination.id });
+      expect(response.status).toBe(200);
+      const stored = await getUnit(created.body.data.unit.id);
+      expect(stored.body.data.unit.environment.id).toBe(destination.id);
+    });
+
+    it('AC-INV-11-3 — La consulta informa ubicación y estado físico juntos', async () => {
+      const base = await createEnvironmentRecord('104', 'Ambiente 104');
+      const target = await createItemRecord('UBI-3', 'Equipo consultable');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'UBI-3-001',
+        ownership: 'SENA',
+        physicalState: 'OPERATIVO',
+      });
+
+      const response = await getUnit(created.body.data.unit.id);
+      expect(response.body.data.unit.environment.id).toBe(base.id);
+      expect(response.body.data.unit.physicalState).toBe('OPERATIVO');
+    });
+
+    it('AC-INV-11-4 — Se consulta qué unidades están en un ambiente', async () => {
+      await createEnvironmentRecord('104', 'Ambiente 104');
+      const destination = await createEnvironmentRecord('205', 'Ambiente 205');
+      const target = await createItemRecord('UBI-4', 'Equipo doble ubicación');
+      const inBase = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'UBI-4-104',
+        ownership: 'SENA',
+      });
+      const inDestination = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'UBI-4-205',
+        ownership: 'SENA',
+        environmentId: destination.id,
+      });
+
+      const response = await request(app)
+        .get('/api/inventory')
+        .query({ environmentId: destination.id, limit: 100 })
+        .set('Authorization', authHeader(admin));
+      const ids = response.body.data.data.map((row) => row.id);
+      expect(ids).toContain(inDestination.body.data.unit.id);
+      expect(ids).not.toContain(inBase.body.data.unit.id);
+    });
+
+    it('AC-INV-11-5 — Una unidad prestada informa el ambiente de destino', async () => {
+      await createEnvironmentRecord('104', 'Ambiente 104');
+      const destination = await createEnvironmentRecord('205', 'Ambiente 205');
+      const target = await createItemRecord('UBI-5', 'Equipo prestado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'UBI-5-001',
+        ownership: 'SENA',
+      });
+
+      const requestResponse = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ environmentId: destination.id, items: [{ itemId: target.id, requestedQty: 1 }] });
+      expect(requestResponse.status).toBe(201);
+      const requestId = requestResponse.body.data.request.id;
+      await request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+
+      const stored = await getUnit(created.body.data.unit.id);
+      expect(stored.body.data.unit.environment.id).toBe(destination.id);
+      expect(stored.body.data.unit.environment.name).toBe('Ambiente 205');
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-12 — Mantenimiento (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-12 — Mantenimiento', () => {
+    const createItemRecord = (code, name) =>
+      prismaTest.item.create({ data: { code, name, categoryId: category.id } });
+    const createUnitViaApi = (payload) =>
+      request(app).post('/api/inventory').set('Authorization', authHeader(admin)).send(payload);
+    const setState = (unitId, physicalState, token = admin) =>
+      request(app)
+        .put(`/api/inventory/${unitId}`)
+        .set('Authorization', authHeader(token))
+        .send({ physicalState });
+    const requestUnit = (itemId) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId, requestedQty: 1 }] });
+    const deliverRequest = async (requestId) => {
+      await request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      return request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+    };
+    const createParentWithPiece = async ({ parentCode, pieceCode, parentState }) => {
+      const parentItem = await createItemRecord(parentCode, `Conjunto ${parentCode}`);
+      const pieceItem = await createItemRecord(pieceCode, `Pieza ${pieceCode}`);
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: parentItem.id, childItemId: pieceItem.id, isRequired: true },
+      });
+      const parentUnit = await createUnitViaApi({
+        itemId: parentItem.id,
+        serialNumber: `${parentCode}-U-001`,
+        ownership: 'SENA',
+        physicalState: parentState,
+      });
+      const pieceUnit = await createUnitViaApi({
+        itemId: pieceItem.id,
+        serialNumber: `${pieceCode}-U-001`,
+        ownership: 'SENA',
+      });
+      await request(app)
+        .post(`/api/inventory/${parentUnit.body.data.unit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [pieceUnit.body.data.unit.id] });
+      return { parentItem, pieceItem, parentUnitId: parentUnit.body.data.unit.id, pieceUnitId: pieceUnit.body.data.unit.id };
+    };
+
+    it('AC-INV-12-1 — El administrador envía a mantenimiento un equipo con falla', async () => {
+      const target = await createItemRecord('MANT-1', 'Equipo con falla reparable');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'MANT-1-001',
+        ownership: 'SENA',
+        physicalState: 'CON_FALLA',
+      });
+      const unitId = created.body.data.unit.id;
+
+      // Sus piezas sueltas sí se prestaban en CON_FALLA.
+      const assembly = await createParentWithPiece({
+        parentCode: 'MANT-1-KIT',
+        pieceCode: 'MANT-1-PZA',
+        parentState: 'CON_FALLA',
+      });
+      expect((await requestUnit(assembly.pieceItem.id)).status).toBe(201);
+
+      // Segundo conjunto con falla: pasa a mantenimiento y sus piezas dejan de prestarse.
+      const second = await createParentWithPiece({
+        parentCode: 'MANT-1B-KIT',
+        pieceCode: 'MANT-1B-PZA',
+        parentState: 'CON_FALLA',
+      });
+      const response = await setState(second.parentUnitId, 'EN_MANTENIMIENTO');
+      expect(response.status).toBe(200);
+      expect((await requestUnit(second.pieceItem.id)).status).toBe(409);
+
+      expect(unitId).toBeDefined();
+    });
+
+    it('AC-INV-12-2 — Al volver del mantenimiento el administrador decide el estado', async () => {
+      const target = await createItemRecord('MANT-2', 'Equipo en mantenimiento');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'MANT-2-001',
+        ownership: 'SENA',
+        physicalState: 'CON_FALLA',
+      });
+      const unitId = created.body.data.unit.id;
+      await setState(unitId, 'EN_MANTENIMIENTO');
+
+      // Vuelve OPERATIVO: se presta como unidad.
+      const backToOperative = await setState(unitId, 'OPERATIVO');
+      expect(backToOperative.status).toBe(200);
+      const requestOperative = await requestUnit(target.id);
+      expect(requestOperative.status).toBe(201);
+
+      // Vuelve AVERIADO: no se presta como unidad, pero sus piezas sí.
+      const veto = await createItemRecord('MANT-2B', 'Equipo que vuelve averiado');
+      const vetoUnit = await createUnitViaApi({
+        itemId: veto.id,
+        serialNumber: 'MANT-2B-001',
+        ownership: 'SENA',
+        physicalState: 'CON_FALLA',
+      });
+      await setState(vetoUnit.body.data.unit.id, 'EN_MANTENIMIENTO');
+      const backToDamaged = await setState(vetoUnit.body.data.unit.id, 'AVERIADO');
+      expect(backToDamaged.status).toBe(200);
+      expect((await requestUnit(veto.id)).status).toBe(409);
+
+      const assembly = await createParentWithPiece({
+        parentCode: 'MANT-2C-KIT',
+        pieceCode: 'MANT-2C-PZA',
+        parentState: 'AVERIADO',
+      });
+      const pieceRequest = await requestUnit(assembly.pieceItem.id);
+      expect(pieceRequest.status).toBe(201);
+      expect((await deliverRequest(pieceRequest.body.data.request.id)).status).toBe(200);
+    });
+
+    it('AC-INV-12-3 — Un equipo averiado no se envía a mantenimiento', async () => {
+      const target = await createItemRecord('MANT-3', 'Equipo averiado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'MANT-3-001',
+        ownership: 'SENA',
+        physicalState: 'AVERIADO',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await setState(unitId, 'EN_MANTENIMIENTO');
+      expect(response.status).toBe(409);
+      const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unitId } });
+      expect(stored.physicalState).toBe('AVERIADO');
+    });
+
+    it('AC-INV-12-4 — Solo el administrador cambia el estado físico', async () => {
+      const target = await createItemRecord('MANT-4', 'Equipo protegido');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'MANT-4-001',
+        ownership: 'SENA',
+        physicalState: 'CON_FALLA',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await setState(unitId, 'EN_MANTENIMIENTO', instructor);
+      expect(response.status).toBe(403);
+      const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unitId } });
+      expect(stored.physicalState).toBe('CON_FALLA');
     });
   });
 });
