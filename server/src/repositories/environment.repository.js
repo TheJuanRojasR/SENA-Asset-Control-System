@@ -15,7 +15,11 @@ export const environmentRepository = {
   async findById(id) {
     return prisma.environment.findFirst({
       where: { id, isDeleted: false },
-      select: defaultSelect,
+      select: {
+        ...defaultSelect,
+        // AC-AMB-02-2 / RN-CTX-10: el catálogo informa cuántas unidades hay en cada ambiente.
+        _count: { select: { inventoryUnits: true } },
+      },
     });
   },
 
@@ -49,6 +53,13 @@ export const environmentRepository = {
     });
   },
 
+  async existsActiveName(name, excludeId) {
+    const where = { name, isDeleted: false };
+    if (excludeId) where.id = { not: excludeId };
+    const count = await prisma.environment.count({ where });
+    return count > 0;
+  },
+
   async existsActiveCode(code, excludeId) {
     const where = { code, isDeleted: false };
     if (excludeId) where.id = { not: excludeId };
@@ -63,7 +74,10 @@ export const environmentRepository = {
   async findMany(filters = {}, { page = 1, limit = 20 } = {}) {
     return prisma.environment.findMany({
       where: buildWhere(filters),
-      select: defaultSelect,
+      select: {
+        ...defaultSelect,
+        _count: { select: { inventoryUnits: true } },
+      },
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { createdAt: 'desc' },

@@ -12,8 +12,9 @@ export const inventoryService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    if (data.environmentId) {
-      const environment = await environmentRepository.findById(data.environmentId);
+    let environmentId = data.environmentId;
+    if (environmentId) {
+      const environment = await environmentRepository.findById(environmentId);
       if (!environment) {
         throw new AppError(
           'Ambiente no encontrado',
@@ -21,6 +22,12 @@ export const inventoryService = {
           'ENVIRONMENT_NOT_FOUND'
         );
       }
+    } else {
+      // RN-CTX-08: toda unidad tiene ubicación obligatoria; la de una unidad nueva es el
+      // Ambiente 104 (código '104' del seed). Si la instalación no lo tiene, se conserva el
+      // comportamiento anterior (sin ubicación) para no romper el alta existente.
+      const baseEnvironment = await environmentRepository.findByCode('104');
+      if (baseEnvironment) environmentId = baseEnvironment.id;
     }
 
     const serialNumber = data.serialNumber || (await generateNextSerial(item.code));
@@ -36,6 +43,7 @@ export const inventoryService = {
 
     const unit = await inventoryRepository.create({
       ...data,
+      environmentId,
       serialNumber,
     });
 
