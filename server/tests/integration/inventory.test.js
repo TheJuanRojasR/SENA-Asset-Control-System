@@ -1751,4 +1751,271 @@ describe('Inventory endpoints', () => {
       expect(row.unit).toBe('LITRO');
     });
   });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-09 — Tramitar la baja de un equipo del SENA (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-09 — Trámite de baja SENA', () => {
+    const createItemRecord = (code, name) =>
+      prismaTest.item.create({ data: { code, name, categoryId: category.id } });
+    const createUnitViaApi = (payload) =>
+      request(app).post('/api/inventory').set('Authorization', authHeader(admin)).send(payload);
+    const getUnit = (unitId) =>
+      request(app).get(`/api/inventory/${unitId}`).set('Authorization', authHeader(admin));
+    const startProcess = (unitId, reason) =>
+      request(app)
+        .post(`/api/inventory/${unitId}/disposal/start`)
+        .set('Authorization', authHeader(admin))
+        .send(reason ? { reason } : {});
+    const confirmProcess = (unitId, token = admin) =>
+      request(app)
+        .post(`/api/inventory/${unitId}/disposal/confirm`)
+        .set('Authorization', authHeader(token));
+    const catalog = (params = {}) =>
+      request(app).get('/api/catalog').query(params).set('Authorization', authHeader(admin));
+
+    it('AC-INV-09-1 — Iniciar el trámite no da de baja la unidad', async () => {
+      const target = await createItemRecord('TRAM-1', 'Equipo SENA en trámite');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-1-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await startProcess(unitId, 'Avería no reparable');
+      expect(response.status).toBe(200);
+
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.disposalInProgress).toBe(true);
+      expect(stored.body.data.unit.status).toBe('AVAILABLE');
+      expect(stored.body.data.unit.status).not.toBe('DISPOSED');
+    });
+
+    it('AC-INV-09-2 — La unidad en trámite sigue en el inventario', async () => {
+      const target = await createItemRecord('TRAM-2', 'Equipo SENA visible');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-2-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+      await startProcess(unitId, 'Trámite abierto');
+
+      const list = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      expect(list.body.data.data.some((row) => row.id === unitId)).toBe(true);
+
+      const detail = await getUnit(unitId);
+      expect(detail.status).toBe(200);
+      expect(detail.body.data.unit.serialNumber).toBe('TRAM-2-001');
+    });
+
+    it('AC-INV-09-3 — La baja solo se efectiviza con la confirmación', async () => {
+      const target = await createItemRecord('TRAM-3', 'Equipo SENA a confirmar');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-3-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+      await startProcess(unitId, 'Motivo del trámite');
+
+      const before = await getUnit(unitId);
+      expect(before.body.data.unit.disposalInProgress).toBe(true);
+      expect(before.body.data.unit.disposalConfirmedAt).toBeNull();
+      expect(before.body.data.unit.status).not.toBe('DISPOSED');
+
+      const confirmed = await confirmProcess(unitId);
+      expect(confirmed.status).toBe(200);
+      const after = await getUnit(unitId);
+      expect(after.body.data.unit.status).toBe('DISPOSED');
+      expect(after.body.data.unit.disposalInProgress).toBe(false);
+      expect(after.body.data.unit.disposalConfirmedAt).not.toBeNull();
+
+      const availability = await catalog({ from: '2026-12-01', to: '2026-12-02' });
+      expect(availability.body.data.data.find((row) => row.id === target.id).availableQty).toBe(0);
+    });
+
+    it('AC-INV-09-4 — El trámite registra motivo y actor, y la confirmación registra quién la otorga', async () => {
+      const target = await createItemRecord('TRAM-4', 'Equipo SENA con motivo');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-4-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const withoutReason = await startProcess(unitId);
+      expect(withoutReason.status).toBe(400);
+      const untouched = await getUnit(unitId);
+      expect(untouched.body.data.unit.disposalInProgress).toBe(false);
+      expect(untouched.body.data.unit.disposalStartedAt).toBeNull();
+
+      const started = await startProcess(unitId, 'Baja institucional');
+      expect(started.status).toBe(200);
+      const inProcess = await getUnit(unitId);
+      expect(inProcess.body.data.unit.disposalReason).toBe('Baja institucional');
+      expect(inProcess.body.data.unit.disposalStartedById).toBe(admin.id);
+
+      await confirmProcess(unitId);
+      const confirmed = await getUnit(unitId);
+      expect(confirmed.body.data.unit.disposalConfirmedById).toBe(admin.id);
+    });
+
+    it('AC-INV-09-5 — Solo el administrador registra la confirmación', async () => {
+      const target = await createItemRecord('TRAM-5', 'Equipo SENA confirmación');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-5-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+      await startProcess(unitId, 'Motivo');
+
+      const forbidden = await confirmProcess(unitId, instructor);
+      expect(forbidden.status).toBe(403);
+      const stillOpen = await getUnit(unitId);
+      expect(stillOpen.body.data.unit.disposalInProgress).toBe(true);
+      expect(stillOpen.body.data.unit.disposalConfirmedAt).toBeNull();
+
+      const confirmed = await confirmProcess(unitId);
+      expect(confirmed.status).toBe(200);
+    });
+
+    it('AC-INV-09-6 — Una unidad en trámite no se presta, ni por piezas', async () => {
+      // Unidad como unidad: OPERATIVO en trámite.
+      const target = await createItemRecord('TRAM-6', 'Equipo SENA operativo');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-6-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+      await startProcess(unitId, 'Trámite');
+
+      const requestUnit = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: target.id, requestedQty: 1 }] });
+      expect(requestUnit.status).toBe(409);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { inventoryUnitId: unitId } })
+      ).toBe(0);
+
+      // Pieza suelta de una unidad averiada en trámite.
+      const kitItem = await createItemRecord('TRAM-6-KIT', 'Conjunto averiado');
+      const pieceItem = await createItemRecord('TRAM-6-PZA', 'Pieza suelta');
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: kitItem.id, childItemId: pieceItem.id, isRequired: true },
+      });
+      const kitUnit = await createUnitViaApi({
+        itemId: kitItem.id,
+        serialNumber: 'TRAM-6-KIT-001',
+        ownership: 'SENA',
+        physicalState: 'AVERIADO',
+      });
+      const pieceUnit = await createUnitViaApi({
+        itemId: pieceItem.id,
+        serialNumber: 'TRAM-6-PZA-001',
+        ownership: 'SENA',
+      });
+      await request(app)
+        .post(`/api/inventory/${kitUnit.body.data.unit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [pieceUnit.body.data.unit.id] });
+      await startProcess(kitUnit.body.data.unit.id, 'Avería en trámite');
+
+      const requestPiece = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: pieceItem.id, requestedQty: 1 }] });
+      expect(requestPiece.status).toBe(409);
+      expect(
+        await prismaTest.requestItemUnit.count({
+          where: { inventoryUnitId: pieceUnit.body.data.unit.id },
+        })
+      ).toBe(0);
+
+      const inventory = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      const ids = inventory.body.data.data.map((row) => row.id);
+      expect(ids).toContain(unitId);
+      expect(ids).toContain(kitUnit.body.data.unit.id);
+      expect(ids).toContain(pieceUnit.body.data.unit.id);
+    });
+
+    it('AC-INV-09-7 — Una unidad declarada perdida no bloquea nada y sus piezas siguen prestables', async () => {
+      // Unidad perdida durante el trámite: sale del inventario activo, trámite abierto.
+      const target = await createItemRecord('TRAM-7', 'Equipo perdido');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'TRAM-7-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+      await startProcess(unitId, 'Trámite por pérdida');
+      const loss = await request(app)
+        .post(`/api/inventory/${unitId}/loss`)
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Pérdida durante el trámite' });
+      expect(loss.status).toBe(200);
+
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.declaredLost).toBe(true);
+      expect(stored.body.data.unit.disposalInProgress).toBe(true);
+
+      const list = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', authHeader(admin));
+      expect(list.body.data.data.some((row) => row.id === unitId)).toBe(false);
+
+      // Piezas del conjunto perdido: siguen prestables pese al trámite abierto.
+      const kitItem = await createItemRecord('TRAM-7-KIT', 'Conjunto perdido');
+      const pieceItem = await createItemRecord('TRAM-7-PZA', 'Pieza prestable');
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: kitItem.id, childItemId: pieceItem.id, isRequired: true },
+      });
+      const kitUnit = await createUnitViaApi({
+        itemId: kitItem.id,
+        serialNumber: 'TRAM-7-KIT-001',
+        ownership: 'SENA',
+      });
+      const pieceUnit = await createUnitViaApi({
+        itemId: pieceItem.id,
+        serialNumber: 'TRAM-7-PZA-001',
+        ownership: 'SENA',
+      });
+      await request(app)
+        .post(`/api/inventory/${kitUnit.body.data.unit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [pieceUnit.body.data.unit.id] });
+      await startProcess(kitUnit.body.data.unit.id, 'Trámite del conjunto');
+      await request(app)
+        .post(`/api/inventory/${kitUnit.body.data.unit.id}/loss`)
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Conjunto perdido' });
+
+      const pieceRequest = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: pieceItem.id, requestedQty: 1 }] });
+      expect(pieceRequest.status).toBe(201);
+      const pieceRequestId = pieceRequest.body.data.request.id;
+      await request(app)
+        .put(`/api/requests/${pieceRequestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${pieceRequestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      const delivered = await request(app)
+        .put(`/api/requests/${pieceRequestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+      expect(delivered.status).toBe(200);
+      const kitAfter = await getUnit(kitUnit.body.data.unit.id);
+      expect(kitAfter.body.data.unit.disposalInProgress).toBe(true);
+    });
+  });
 });
