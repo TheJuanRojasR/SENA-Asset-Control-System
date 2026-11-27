@@ -128,7 +128,7 @@ describe('Request endpoints', () => {
         .send({
           environmentId: environment.id,
           shift: 'MORNING',
-          estimatedDate: '2026-07-10',
+          estimatedDate: '2027-01-10',
           observations: 'Solicitud de prueba',
           items: [{ itemId: item.id, requestedQty: 2 }],
         });
@@ -663,6 +663,196 @@ describe('Request endpoints', () => {
       expect(response.body.success).toBe(false);
     });
   });
+  // ---------------------------------------------------------------------------------
+  // US-SOL-01 — Crear una solicitud (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-SOL-01 — Crear solicitud', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayOffset = (offset) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      return new Date(date.getTime() + offset * DAY_MS);
+    };
+    const dayString = (date) => new Date(date).toISOString().slice(0, 10);
+
+    const postRequest = (payload, token = instructor) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(token))
+        .send(payload);
+
+    const assignmentsOf = (itemId) =>
+      prismaTest.requestItemUnit.count({
+        where: { requestItem: { itemId } },
+      });
+
+    it('AC-SOL-01-1 — Crear una solicitud reserva las unidades para el rango de fechas', async () => {
+      await seedUnits(item.id, 3);
+      const pickupDate = dayOffset(1);
+      const estimatedDate = dayOffset(3);
+
+      const response = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 2 }],
+        pickupDate,
+        estimatedDate,
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.request.status).toBe('PENDING');
+      expect(dayString(response.body.data.request.pickupDate)).toBe(dayString(pickupDate));
+      expect(dayString(response.body.data.request.estimatedDate)).toBe(dayString(estimatedDate));
+      expect(await assignmentsOf(item.id)).toBe(2);
+      const reserved = await prismaTest.inventoryUnit.count({
+        where: { itemId: item.id, status: 'RESERVED' },
+      });
+      expect(reserved).toBe(2);
+    });
+
+    it('AC-SOL-01-2 — Sin disponibilidad suficiente se rechaza y no se reserva nada', async () => {
+      await seedUnits(item.id, 3);
+
+      const response = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 5 }],
+        pickupDate: dayOffset(1),
+        estimatedDate: dayOffset(2),
+      });
+
+      expect(response.status).toBe(409);
+      expect(await prismaTest.request.count()).toBe(0);
+      expect(await assignmentsOf(item.id)).toBe(0);
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'RESERVED' },
+        })
+      ).toBe(0);
+    });
+
+    it('AC-SOL-01-3 — Dos solicitudes con rangos que no se solapan se aceptan ambas', async () => {
+      await seedUnits(item.id, 1);
+
+      const first = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(1),
+        estimatedDate: dayOffset(2),
+      });
+      expect(first.status).toBe(201);
+
+      const second = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(5),
+        estimatedDate: dayOffset(6),
+      });
+      expect(second.status).toBe(201);
+
+      expect(await prismaTest.request.count()).toBe(2);
+      expect(await assignmentsOf(item.id)).toBe(2);
+    });
+
+    it('AC-SOL-01-4 — Dos solicitudes con rangos que se solapan compiten por el mismo stock', async () => {
+      await seedUnits(item.id, 1);
+
+      const first = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(1),
+        estimatedDate: dayOffset(4),
+      });
+      expect(first.status).toBe(201);
+
+      const overlapping = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(3),
+        estimatedDate: dayOffset(6),
+      });
+      expect(overlapping.status).toBe(409);
+      expect(await prismaTest.request.count()).toBe(1);
+    });
+
+    it('AC-SOL-01-5 — El administrador no puede crear solicitudes', async () => {
+      await seedUnits(item.id, 1);
+      const response = await postRequest(
+        { items: [{ itemId: item.id, requestedQty: 1 }] },
+        admin
+      );
+      expect(response.status).toBe(403);
+      expect(await prismaTest.request.count()).toBe(0);
+    });
+
+    it('AC-SOL-01-6 — El mismo elemento repetido en la misma solicitud se rechaza', async () => {
+      await seedUnits(item.id, 3);
+      const response = await postRequest({
+        items: [
+          { itemId: item.id, requestedQty: 1 },
+          { itemId: item.id, requestedQty: 1 },
+        ],
+      });
+      expect(response.status).toBe(400);
+      expect(await prismaTest.request.count()).toBe(0);
+    });
+
+    it('AC-SOL-01-7 — Una unidad prestada no cuenta como disponible para ningún rango', async () => {
+      await seedUnits(item.id, 1, 'LOANED');
+      const response = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(1),
+        estimatedDate: dayOffset(2),
+      });
+      expect(response.status).toBe(409);
+      expect(await assignmentsOf(item.id)).toBe(0);
+    });
+
+    it('AC-SOL-01-8 — Una cantidad decimal de un consumible se rechaza', async () => {
+      const consumable = await prismaTest.item.create({
+        data: {
+          code: 'CON-SOL',
+          name: 'Consumible',
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'LITRO',
+          stock: 10,
+        },
+      });
+      const response = await postRequest({
+        items: [{ itemId: consumable.id, requestedQty: 1.5 }],
+      });
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body).toLowerCase()).toMatch(/entero|integer/);
+      expect((await prismaTest.item.findUnique({ where: { id: consumable.id } })).stock).toBe(10);
+    });
+
+    it('AC-SOL-01-9 — Una fecha de retiro anterior a hoy se rechaza y nada se reserva', async () => {
+      await seedUnits(item.id, 1);
+      const response = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(-1),
+        estimatedDate: dayOffset(1),
+      });
+      expect(response.status).toBe(400);
+      expect(await prismaTest.request.count()).toBe(0);
+      expect(await assignmentsOf(item.id)).toBe(0);
+    });
+
+    it('AC-SOL-01-10 — Una fecha estimada anterior a la de retiro se rechaza', async () => {
+      await seedUnits(item.id, 1);
+      const response = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+        pickupDate: dayOffset(2),
+        estimatedDate: dayOffset(1),
+      });
+      expect(response.status).toBe(400);
+      expect(await prismaTest.request.count()).toBe(0);
+    });
+
+    it('AC-SOL-01-11 — La fecha de retiro por defecto es el día siguiente', async () => {
+      await seedUnits(item.id, 1);
+      const response = await postRequest({
+        items: [{ itemId: item.id, requestedQty: 1 }],
+      });
+      expect(response.status).toBe(201);
+      expect(dayString(response.body.data.request.pickupDate)).toBe(dayString(dayOffset(1)));
+      expect(await assignmentsOf(item.id)).toBe(1);
+    });
+  });
 });
 
 const requestRepository = {
@@ -680,6 +870,7 @@ const requestRepository = {
           },
         },
       },
-    });
+    
+});
   },
 };
