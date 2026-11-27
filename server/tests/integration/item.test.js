@@ -2,6 +2,7 @@ import request from 'supertest';
 import express from 'express';
 import itemRoutes from '../../src/routes/item.routes.js';
 import inventoryRoutes from '../../src/routes/inventory.routes.js';
+import requestRoutes from '../../src/routes/request.routes.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
 import {
@@ -23,6 +24,7 @@ function buildApp() {
   app.use(express.json());
   app.use('/api/items', itemRoutes);
   app.use('/api/inventory', inventoryRoutes);
+  app.use('/api/requests', requestRoutes);
   app.use(errorHandler);
   return app;
 }
@@ -48,6 +50,20 @@ const createCategory = (name = 'Herramientas de taller') =>
   prismaTest.category.create({ data: { name } });
 
 const countItems = () => prismaTest.item.count();
+
+let serialSequence = 0;
+async function createUnit(itemId, overrides = {}) {
+  serialSequence += 1;
+  return prismaTest.inventoryUnit.create({
+    data: {
+      itemId,
+      serialNumber: `SN-${Date.now()}-${serialSequence}`,
+      status: 'AVAILABLE',
+      ...overrides,
+    },
+  });
+}
+
 
 async function createItemRecord(overrides = {}) {
   const category = await prismaTest.category.create({
@@ -688,6 +704,164 @@ describe('Módulo 04 — Ítems (US-ITE-01 y US-ITE-02)', () => {
         where: { id: childUnit.id },
       });
       expect(childAfter.parentUnitId).toBe(parentUnit.id);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-ITE-06 — Dar de baja un elemento del catálogo
+  // ---------------------------------------------------------------------------------
+  describe('US-ITE-06 — Baja del elemento', () => {
+    it('AC-ITE-06-1 — Se da de baja un elemento sin unidades comprometidas y no desaparece del catálogo', async () => {
+      const { token } = await createAdminToken();
+      const { token: instructorToken } = await createInstructorToken();
+      const category = await createCategory();
+
+      const created = await createItemApi(token, {
+        code: 'BAJA-1',
+        name: 'Elemento a dar de baja',
+        categoryId: category.id,
+      });
+      expect(created.status).toBe(201);
+      const itemId = created.body.data.item.id;
+      const unit = await createUnit(itemId);
+
+      const response = await request(app)
+        .delete(`/api/items/${itemId}`)
+        .set('Authorization', token);
+      expect(response.status).toBe(200);
+
+      // Sigue en el catálogo con su estado y cuenta en el total (RN-INV-45).
+      const listResponse = await request(app)
+        .get('/api/items')
+        .set('Authorization', token);
+      const listed = listResponse.body.data.data.find((item) => item.id === itemId);
+      expect(listed).toBeDefined();
+      expect(listed.isActive).toBe(false);
+      expect(listResponse.body.data.meta.total).toBeGreaterThanOrEqual(1);
+
+      // Sus unidades siguen figurando en inventario (RN-INV-16).
+      const inventoryResponse = await request(app)
+        .get('/api/inventory')
+        .set('Authorization', token);
+      const unitListed = inventoryResponse.body.data.data.find(
+        (row) => row.id === unit.id
+      );
+      expect(unitListed).toBeDefined();
+
+      // Deja de ofrecerse: una solicitud nueva con el elemento se rechaza.
+      const requestResponse = await request(app)
+        .post('/api/requests')
+        .set('Authorization', instructorToken)
+        .send({ items: [{ itemId, requestedQty: 1 }] });
+      expect(requestResponse.status).toBeGreaterThanOrEqual(400);
+      expect(requestResponse.status).toBeLessThan(500);
+      expect(await prismaTest.request.count()).toBe(0);
+    });
+
+    it('AC-ITE-06-2 — La baja se rechaza con unidades comprometidas y se acepta con la unidad declarada perdida', async () => {
+      const { token } = await createAdminToken();
+      const category = await createCategory();
+
+      // Escenario 1: unidad prestada.
+      const loaned = await createItemApi(token, {
+        code: 'BAJA-LOANED',
+        name: 'Con unidad prestada',
+        categoryId: category.id,
+      });
+      const loanedUnit = await createUnit(loaned.body.data.item.id, { status: 'LOANED' });
+      const loanedResponse = await request(app)
+        .delete(`/api/items/${loaned.body.data.item.id}`)
+        .set('Authorization', token);
+      expect(loanedResponse.status).toBe(409);
+      const loanedAfter = await getItemApi(token, loaned.body.data.item.id);
+      expect(loanedAfter.body.data.item.isActive).toBe(true);
+      expect((await prismaTest.inventoryUnit.findUnique({ where: { id: loanedUnit.id } })).status)
+        .toBe('LOANED');
+
+      // Escenario 2: unidad reservada.
+      const reserved = await createItemApi(token, {
+        code: 'BAJA-RESERVED',
+        name: 'Con unidad reservada',
+        categoryId: category.id,
+      });
+      const reservedUnit = await createUnit(reserved.body.data.item.id, { status: 'RESERVED' });
+      const reservedResponse = await request(app)
+        .delete(`/api/items/${reserved.body.data.item.id}`)
+        .set('Authorization', token);
+      expect(reservedResponse.status).toBe(409);
+      expect((await prismaTest.inventoryUnit.findUnique({ where: { id: reservedUnit.id } })).status)
+        .toBe('RESERVED');
+
+      // Escenario 3: la única unidad fue declarada perdida (sale del inventario activo,
+      // RN-PRE-15) → no está comprometida y la baja se acepta.
+      const lost = await createItemApi(token, {
+        code: 'BAJA-VOLUNTARIA',
+        name: 'Con unidad declarada perdida',
+        categoryId: category.id,
+      });
+      const lostUnit = await createUnit(lost.body.data.item.id);
+      await prismaTest.inventoryUnit.update({
+        where: { id: lostUnit.id },
+        data: { status: 'DISPOSED', physicalState: 'DISPOSED' },
+      });
+      const lostResponse = await request(app)
+        .delete(`/api/items/${lost.body.data.item.id}`)
+        .set('Authorization', token);
+      expect(lostResponse.status).toBe(200);
+      const lostAfter = await getItemApi(token, lost.body.data.item.id);
+      expect(lostAfter.body.data.item.isActive).toBe(false);
+
+      // Mezcla: una unidad perdida no anula el bloqueo de otra prestada.
+      const mixed = await createItemApi(token, {
+        code: 'BAJA-MIXTA',
+        name: 'Con una perdida y una prestada',
+        categoryId: category.id,
+      });
+      const mixedLost = await createUnit(mixed.body.data.item.id);
+      await prismaTest.inventoryUnit.update({
+        where: { id: mixedLost.id },
+        data: { status: 'DISPOSED', physicalState: 'DISPOSED' },
+      });
+      await createUnit(mixed.body.data.item.id, { status: 'LOANED' });
+      const mixedResponse = await request(app)
+        .delete(`/api/items/${mixed.body.data.item.id}`)
+        .set('Authorization', token);
+      expect(mixedResponse.status).toBe(409);
+    });
+
+    it('AC-ITE-06-3 — Un elemento dado de baja sigue siendo consultable', async () => {
+      const { token } = await createAdminToken();
+      const category = await createCategory();
+
+      const created = await createItemApi(token, {
+        code: 'BAJA-CONSULTA',
+        name: 'Consultable tras baja',
+        categoryId: category.id,
+      });
+      const itemId = created.body.data.item.id;
+
+      const baja = await request(app)
+        .delete(`/api/items/${itemId}`)
+        .set('Authorization', token);
+      expect(baja.status).toBe(200);
+
+      const response = await getItemApi(token, itemId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.item.code).toBe('BAJA-CONSULTA');
+      expect(response.body.data.item.isActive).toBe(false);
+
+      // Reintentar la baja es idempotente: no duplica ni borra el registro.
+      const secondBaja = await request(app)
+        .delete(`/api/items/${itemId}`)
+        .set('Authorization', token);
+      expect(secondBaja.status).toBe(200);
+
+      // No existe borrado físico del elemento (RN-INV-45).
+      const hardResponse = await request(app)
+        .delete(`/api/items/${itemId}/hard`)
+        .set('Authorization', token);
+      expect(hardResponse.status).toBe(404);
+      expect(await prismaTest.item.count({ where: { id: itemId } })).toBe(1);
     });
   });
 });
