@@ -73,7 +73,7 @@ async function createUnit(itemId, overrides = {}) {
       itemId,
       serialNumber: `SN-${serialSequence}`,
       status: 'AVAILABLE',
-      physicalState: 'GOOD',
+      physicalState: 'OPERATIVO',
       ...overrides,
     },
   });
@@ -444,7 +444,7 @@ describe('Módulo 08 — Catálogo y disponibilidad', () => {
       const item = await createItem(category.id, { name: 'Con averiada' });
       await createUnit(item.id);
       await createUnit(item.id);
-      await createUnit(item.id, { physicalState: 'DAMAGED' });
+      await createUnit(item.id, { physicalState: 'AVERIADO' });
 
       const response = await queryCatalog(instructor.token, {
         from: dateOffset(1),
@@ -564,9 +564,9 @@ describe('Módulo 08 — Catálogo y disponibilidad', () => {
       // La pieza del conjunto sin trámite cuenta; la del conjunto en trámite no.
       const assembly = await createItem(category.id, { name: 'Conjunto averiado' });
       const pieceItem = await createItem(category.id, { name: 'Pieza de conjunto averiado' });
-      const assemblyWithoutDisposal = await createUnit(assembly.id, { physicalState: 'DAMAGED' });
+      const assemblyWithoutDisposal = await createUnit(assembly.id, { physicalState: 'AVERIADO' });
       const assemblyWithDisposal = await createUnit(assembly.id, {
-        physicalState: 'DAMAGED',
+        physicalState: 'AVERIADO',
         disposalInProgress: true,
       });
       await createUnit(pieceItem.id, { parentUnitId: assemblyWithoutDisposal.id });

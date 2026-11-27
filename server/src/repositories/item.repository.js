@@ -165,7 +165,7 @@ export const itemRepository = {
 
   /**
    * RN-INV-45: una unidad está comprometida si está prestada o reservada. Una unidad
-   * dada de baja o declarada perdida (DISPOSED) sale del inventario activo y no bloquea;
+   * dada de baja o declarada perdida sale del inventario activo y no bloquea;
    * RN-PRE-15 lo fija para la pérdida.
    */
   async countCommittedUnits(id) {

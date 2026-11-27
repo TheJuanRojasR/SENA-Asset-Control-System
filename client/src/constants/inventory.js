@@ -10,18 +10,23 @@ export const SHIFT_OPTIONS = [
   { value: SHIFTS.NIGHT, label: 'Noche' },
 ];
 
+// RN-INV-30: lista cerrada de seis estados físicos.
 export const PHYSICAL_STATES = {
-  GOOD: 'GOOD',
-  REGULAR: 'REGULAR',
-  DAMAGED: 'DAMAGED',
-  DISPOSED: 'DISPOSED',
+  OPERATIVO: 'OPERATIVO',
+  DESCARGADO_AGOTADO: 'DESCARGADO_AGOTADO',
+  CON_FALLA: 'CON_FALLA',
+  AVERIADO: 'AVERIADO',
+  EN_MANTENIMIENTO: 'EN_MANTENIMIENTO',
+  DADO_DE_BAJA: 'DADO_DE_BAJA',
 };
 
 export const PHYSICAL_STATE_OPTIONS = [
-  { value: PHYSICAL_STATES.GOOD, label: 'Bueno' },
-  { value: PHYSICAL_STATES.REGULAR, label: 'Regular' },
-  { value: PHYSICAL_STATES.DAMAGED, label: 'Dañado' },
-  { value: PHYSICAL_STATES.DISPOSED, label: 'Dado de baja' },
+  { value: PHYSICAL_STATES.OPERATIVO, label: 'Operativo' },
+  { value: PHYSICAL_STATES.DESCARGADO_AGOTADO, label: 'Descargado / agotado' },
+  { value: PHYSICAL_STATES.CON_FALLA, label: 'Con falla' },
+  { value: PHYSICAL_STATES.AVERIADO, label: 'Averiado' },
+  { value: PHYSICAL_STATES.EN_MANTENIMIENTO, label: 'En mantenimiento' },
+  { value: PHYSICAL_STATES.DADO_DE_BAJA, label: 'Dado de baja' },
 ];
 
 export const INVENTORY_STATUS = {

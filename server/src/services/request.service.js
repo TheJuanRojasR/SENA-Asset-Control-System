@@ -349,7 +349,7 @@ export const requestService = {
 
       await Promise.all(
         requestItems.map(async (requestItem) => {
-          const physicalState = requestItem.physicalStateApproved || 'GOOD';
+          const physicalState = requestItem.physicalStateApproved || 'OPERATIVO';
 
           await Promise.all(
             requestItem.assignedUnits.map(async (assignment) => {

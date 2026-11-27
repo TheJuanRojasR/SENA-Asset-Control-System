@@ -8,7 +8,7 @@ Este módulo resuelve el **inventario físico**: la **unidad** identificada por 
 
 Lo escribe el **administrador** (`RN-CTX-05`): el alta de una unidad, el ensamblaje, el estado físico, la ubicación, la baja y el envío a mantenimiento son acciones administrativas. El instructor solicita, recoge y devuelve, y figura como tenedor de lo que se consulta.
 
-Si el módulo falla, un consumible vale siempre cero, no se sabe dónde quedó un equipo que salió hace un mes, una unidad averiada desaparece del inventario, se presta una unidad en trámite de baja o el conjunto que se entrega está incompleto. Estado hoy: **12 historias y 67 criterios especificados y sin ejecutar**; ningún criterio es `OK` ni `GAP`, porque todavía no hay test que los corra.
+Si el módulo falla, un consumible vale siempre cero, no se sabe dónde quedó un equipo que salió hace un mes, una unidad averiada desaparece del inventario, se presta una unidad en trámite de baja o el conjunto que se entrega está incompleto. Estado hoy: **en ejecución parcial**. La base del módulo ya está migrada a los **seis estados físicos** de `RN-INV-30` y `US-INV-01` (registrar unidad serializada) quedó verificado en la rama `devJoseph-inventario`; los demás bloques siguen sin ejecutar.
 
 > **Frontera con los epics 03, 04, 06, 07, 08 y 12.** El **ciclo de la solicitud** —su creación, la aprobación, la verificación al empacar y la entrega— es el epic 06. La **disponibilidad por rango de fechas** es el epic 08. Los **préstamos y las devoluciones** —quién tiene cada unidad, la condición de retorno y la pérdida de una unidad prestada— son el epic 07. El **catálogo de ambientes** es el epic 03. El **alta del elemento**, su composición y su categoría son los epics 04 y 10. El **panel del administrador** es el epic 12. Este epic es dueño de **las unidades físicas y su estado**: ningún criterio de esas historias se repite acá.
 
@@ -1338,15 +1338,15 @@ Sin decisión todavía: los motivos de baja y su vocabulario, la reposición de 
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **especificado y no ejecutado**: los **67** criterios están sin estado y ninguno es `OK`, `GAP` ni `FALTA` hoy.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: US-INV-01 (5 criterios) ya corre con test y está en `OK`; el resto sigue sin ejecutar hasta sus bloques. Antes de empezar se migró el enum `PhysicalState` a la lista cerrada de seis estados (`RN-INV-30`), con conversión de datos y actualización de catálogo, préstamos, seeders y cliente.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-INV-01-1` | `Estándar` | Sin ejecutar |
-| `AC-INV-01-2` | `Estándar` | Sin ejecutar |
-| `AC-INV-01-3` | `Estándar` | Sin ejecutar |
-| `AC-INV-01-4` | `Estándar` | Sin ejecutar |
-| `AC-INV-01-5` | `RN-CTX-05` | Sin ejecutar |
+| `AC-INV-01-1` | `Estándar` | `OK` |
+| `AC-INV-01-2` | `Estándar` | `OK` |
+| `AC-INV-01-3` | `Estándar` | `OK` |
+| `AC-INV-01-4` | `Estándar` | `OK` |
+| `AC-INV-01-5` | `RN-CTX-05` | `OK` |
 | `AC-INV-02-1` | `RN-INV-03` | Sin ejecutar |
 | `AC-INV-02-2` | `RN-INV-09` | Sin ejecutar |
 | `AC-INV-02-3` | `Estándar` | Sin ejecutar |
@@ -1426,7 +1426,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-INV-13` | 2 | 2 | 0 | 0 | 0 |
 | **Total** | **67** | **58** | **9** | **0** | **0** |
 
-Totales: **12 historias y 67 criterios**, todos sin ejecutar. **58** se apoyan en una regla de negocio confirmada y **9** en un invariante técnico (`Estándar`: `AC-INV-01-1` a `AC-INV-01-4`, `AC-INV-02-3` a `AC-INV-02-5`, `AC-INV-03-1` y `AC-INV-04-5`). Ninguno está en `OPEN` ni es `Derivada`. Las citas de regla suman **60** sobre los **58** criterios que se apoyan en al menos una: `AC-INV-05-1` y `AC-INV-08-5` citan dos. `RN-INV-04` y `RN-INV-15` están `REFUTADAS`, no se implementan y no son origen de ningún criterio.
+Totales: **12 historias y 67 criterios**, **5 `OK` y 62 sin ejecutar** (avance parcial en `devJoseph-inventario`). **58** se apoyan en una regla de negocio confirmada y **9** en un invariante técnico (`Estándar`: `AC-INV-01-1` a `AC-INV-01-4`, `AC-INV-02-3` a `AC-INV-02-5`, `AC-INV-03-1` y `AC-INV-04-5`). Ninguno está en `OPEN` ni es `Derivada`. Las citas de regla suman **60** sobre los **58** criterios que se apoyan en al menos una: `AC-INV-05-1` y `AC-INV-08-5` citan dos. `RN-INV-04` y `RN-INV-15` están `REFUTADAS`, no se implementan y no son origen de ningún criterio.
 
 ## Anexo — Datos de prueba
 

@@ -802,7 +802,7 @@ describe('Módulo 04 — Ítems (US-ITE-01 y US-ITE-02)', () => {
       const lostUnit = await createUnit(lost.body.data.item.id);
       await prismaTest.inventoryUnit.update({
         where: { id: lostUnit.id },
-        data: { status: 'DISPOSED', physicalState: 'DISPOSED' },
+        data: { status: 'DISPOSED', physicalState: 'DADO_DE_BAJA' },
       });
       const lostResponse = await request(app)
         .delete(`/api/items/${lost.body.data.item.id}`)
@@ -820,7 +820,7 @@ describe('Módulo 04 — Ítems (US-ITE-01 y US-ITE-02)', () => {
       const mixedLost = await createUnit(mixed.body.data.item.id);
       await prismaTest.inventoryUnit.update({
         where: { id: mixedLost.id },
-        data: { status: 'DISPOSED', physicalState: 'DISPOSED' },
+        data: { status: 'DISPOSED', physicalState: 'DADO_DE_BAJA' },
       });
       await createUnit(mixed.body.data.item.id, { status: 'LOANED' });
       const mixedResponse = await request(app)

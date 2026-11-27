@@ -58,7 +58,7 @@ export function LoansPage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
   const [returnDialog, setReturnDialog] = useState(false);
-  const [physicalState, setPhysicalState] = useState('GOOD');
+  const [physicalState, setPhysicalState] = useState('OPERATIVO');
 
   const statusFilter = activeTab === 0 ? 'LOANED' : 'RETURNED';
 

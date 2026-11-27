@@ -38,11 +38,14 @@ enum UnitStatus {
   DISPOSED
 }
 
+// RN-INV-30: lista cerrada de seis estados físicos de una unidad.
 enum PhysicalState {
-  GOOD
-  REGULAR
-  DAMAGED
-  DISPOSED
+  OPERATIVO
+  DESCARGADO_AGOTADO
+  CON_FALLA
+  AVERIADO
+  EN_MANTENIMIENTO
+  DADO_DE_BAJA
 }
 
 // RN-MOV-01: ocho eventos registrados. La pérdida no es un tipo propio: es el motivo de
@@ -195,7 +198,7 @@ model InventoryUnit {
   environmentId Int?
   parentUnitId  Int?
   status        UnitStatus    @default(AVAILABLE)
-  physicalState PhysicalState @default(GOOD)
+  physicalState PhysicalState @default(OPERATIVO)
   // RN-INV-33: trámite de baja abierto (no es estado físico). Bloquea la unidad y sus piezas.
   disposalInProgress Boolean  @default(false)
   // RN-PRE-15: unidad declarada perdida. Sale del inventario activo y no bloquea; sus
@@ -283,7 +286,7 @@ model RequestItem {
   approvedQty           Int?
   deliveredQty          Int               @default(0)
   returnedQty           Int               @default(0)
-  physicalStateApproved PhysicalState     @default(GOOD)
+  physicalStateApproved PhysicalState     @default(OPERATIVO)
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 

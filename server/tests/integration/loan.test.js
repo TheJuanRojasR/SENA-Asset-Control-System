@@ -64,7 +64,7 @@ async function createUnit(itemId, overrides = {}) {
       itemId,
       serialNumber: `SN-PRE-${serialSequence}`,
       status: 'AVAILABLE',
-      physicalState: 'GOOD',
+      physicalState: 'OPERATIVO',
       ...overrides,
     },
   });
@@ -256,7 +256,7 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
 
       const unitAfter = await prismaTest.inventoryUnit.findUnique({ where: { id: unit.id } });
       expect(unitAfter.status).toBe('LOANED');
-      expect(unitAfter.physicalState).toBe('GOOD');
+      expect(unitAfter.physicalState).toBe('OPERATIVO');
     });
 
     it('AC-PRE-01-3 — El instructor solo ve sus propios préstamos', async () => {
@@ -492,7 +492,7 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
 
       const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unit.id } });
       expect(stored.status).toBe('AVAILABLE');
-      expect(stored.physicalState).toBe('GOOD');
+      expect(stored.physicalState).toBe('OPERATIVO');
 
       const assignment = await prismaTest.requestItemUnit.findFirst({
         where: { inventoryUnitId: unit.id },
@@ -520,7 +520,7 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
       expect(await countReturns()).toBe(before);
       const freeAfter = await prismaTest.inventoryUnit.findUnique({ where: { id: freeUnit.id } });
       expect(freeAfter.status).toBe('AVAILABLE');
-      expect(freeAfter.physicalState).toBe('GOOD');
+      expect(freeAfter.physicalState).toBe('OPERATIVO');
 
       // Unidad prestada en la solicitud B, devuelta «en» la solicitud A.
       const requestBItem = await createItem(category.id, { name: 'Solicitud B' });
@@ -624,7 +624,7 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
         .get(`/api/inventory/${unit.id}`)
         .set('Authorization', admin.token);
       expect(unitResponse.status).toBe(200);
-      expect(unitResponse.body.data.unit.physicalState).toBe('REGULAR');
+      expect(unitResponse.body.data.unit.physicalState).toBe('CON_FALLA');
     });
 
     it('AC-PRE-02-8 — La condición registra funcionamiento y estado por separado', async () => {
@@ -664,12 +664,12 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
     it('AC-PRE-02-9 — El estado físico se determina por el mapeo de RN-PRE-12', async () => {
       const item = await createItem(category.id);
       const combinations = [
-        { functioning: 'FUNCIONA', damageState: 'SIN_DANO', expected: 'GOOD' },
-        { functioning: 'FUNCIONA', damageState: 'DESGASTE_NORMAL', expected: 'GOOD' },
-        { functioning: 'FUNCIONA', damageState: 'DANADO', expected: 'GOOD' },
-        { functioning: 'FUNCIONA_CON_FALLA', damageState: 'SIN_DANO', expected: 'REGULAR' },
-        { functioning: 'FUNCIONA_CON_FALLA', damageState: 'DANADO', expected: 'REGULAR' },
-        { functioning: 'NO_FUNCIONA', damageState: 'DANADO', expected: 'REGULAR' },
+        { functioning: 'FUNCIONA', damageState: 'SIN_DANO', expected: 'OPERATIVO' },
+        { functioning: 'FUNCIONA', damageState: 'DESGASTE_NORMAL', expected: 'OPERATIVO' },
+        { functioning: 'FUNCIONA', damageState: 'DANADO', expected: 'OPERATIVO' },
+        { functioning: 'FUNCIONA_CON_FALLA', damageState: 'SIN_DANO', expected: 'CON_FALLA' },
+        { functioning: 'FUNCIONA_CON_FALLA', damageState: 'DANADO', expected: 'CON_FALLA' },
+        { functioning: 'NO_FUNCIONA', damageState: 'DANADO', expected: 'CON_FALLA' },
       ];
       const units = [];
       for (let index = 0; index < combinations.length; index += 1) {
@@ -695,7 +695,7 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
       const corrected = await request(app)
         .put(`/api/inventory/${units[5].id}`)
         .set('Authorization', admin.token)
-        .send({ physicalState: 'DAMAGED' });
+        .send({ physicalState: 'AVERIADO' });
       expect(corrected.status).toBe(200);
       const history = await getReturns(admin.token, { limit: 100 });
       const row = history.body.data.data.find(
@@ -723,7 +723,7 @@ describe('Módulo 07 — Préstamos y devoluciones (US-PRE-01/02)', () => {
       units.forEach(async (unit) => {
         const stored = await prismaTest.inventoryUnit.findUnique({ where: { id: unit.id } });
         expect(stored.status).toBe('LOANED');
-        expect(stored.physicalState).toBe('GOOD');
+        expect(stored.physicalState).toBe('OPERATIVO');
       });
 
       const validResponse = await postReturn(admin.token, {
