@@ -48,6 +48,7 @@ export const itemRepository = {
                 code: true,
                 name: true,
                 unit: true,
+                isConsumable: true,
               },
             },
           },
@@ -87,6 +88,7 @@ export const itemRepository = {
                 code: true,
                 name: true,
                 unit: true,
+                isConsumable: true,
               },
             },
           },
@@ -183,6 +185,7 @@ export const itemRepository = {
             code: true,
             name: true,
             unit: true,
+            isConsumable: true,
           },
         },
       },
@@ -193,14 +196,26 @@ export const itemRepository = {
     const db = tx || prisma;
     await db.itemComponent.deleteMany({ where: { parentItemId } });
     if (!components || components.length === 0) return [];
-    return db.itemComponent.createMany({
-      data: components.map((c) => ({
-        parentItemId,
-        childItemId: c.childItemId,
-        quantity: c.quantity ?? 1,
-        isRequired: c.isRequired ?? true,
-      })),
-    });
+
+    // RN-INV-23 / AC-ITE-03-2: un componente puede repetirse en la composición. La
+    // repetición se representa sumando cantidades (la regla admite cantidad o filas).
+    const merged = new Map();
+    for (const component of components) {
+      const existing = merged.get(component.childItemId);
+      if (existing) {
+        existing.quantity += component.quantity ?? 1;
+        existing.isRequired = existing.isRequired && (component.isRequired ?? true);
+      } else {
+        merged.set(component.childItemId, {
+          parentItemId,
+          childItemId: component.childItemId,
+          quantity: component.quantity ?? 1,
+          isRequired: component.isRequired ?? true,
+        });
+      }
+    }
+
+    return db.itemComponent.createMany({ data: [...merged.values()] });
   },
 };
 

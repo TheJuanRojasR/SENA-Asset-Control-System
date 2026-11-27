@@ -31,7 +31,13 @@ export const itemService = {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    return { item: await withAvailability(item) };
+    // AC-ITE-04-1 / RN-INV-24: la consulta de composición informa la opcionalidad.
+    const components = (item.components || []).map((component) => ({
+      ...component,
+      isOptional: !component.isRequired,
+    }));
+
+    return { item: { ...(await withAvailability(item)), components } };
   },
 
   async createItem(data) {
@@ -96,6 +102,32 @@ export const itemService = {
 
     const { components, ...itemData } = data;
     await validateComponents(id, components);
+
+    if (components) {
+      // RN-INV-35 / AC-ITE-05-3: con unidades ensambladas no se puede quitar un
+      // componente; agregar siempre se permite.
+      const currentComponents = await itemRepository.findComponents(id);
+      const nextIds = new Set(components.map((component) => component.childItemId));
+      const removedIds = currentComponents
+        .filter((component) => !nextIds.has(component.childItemId))
+        .map((component) => component.childItemId);
+
+      if (removedIds.length > 0) {
+        const assembled = await prisma.inventoryUnit.count({
+          where: {
+            itemId: id,
+            childUnits: { some: { itemId: { in: removedIds } } },
+          },
+        });
+        if (assembled > 0) {
+          throw new AppError(
+            'No se puede quitar un componente con unidades ensambladas',
+            HTTP_STATUS.CONFLICT,
+            'COMPONENT_ASSEMBLED'
+          );
+        }
+      }
+    }
 
     if (itemData.code) {
       const exists = await itemRepository.findByCode(itemData.code, id);
@@ -170,12 +202,6 @@ export const itemService = {
 async function validateComponents(parentItemId, components) {
   if (!components || components.length === 0) return;
 
-  const ids = components.map((c) => c.childItemId);
-  const unique = new Set(ids);
-  if (unique.size !== ids.length) {
-    throw new AppError('Los componentes no pueden repetirse', HTTP_STATUS.BAD_REQUEST, 'DUPLICATED_COMPONENTS');
-  }
-
   for (const component of components) {
     if (parentItemId && component.childItemId === parentItemId) {
       throw new AppError('Un ítem no puede ser componente de sí mismo', HTTP_STATUS.BAD_REQUEST, 'SELF_COMPONENT');
@@ -185,7 +211,42 @@ async function validateComponents(parentItemId, components) {
     if (!child) {
       throw new AppError(`Ítem componente no encontrado: ${component.childItemId}`, HTTP_STATUS.NOT_FOUND, 'COMPONENT_NOT_FOUND');
     }
+
+    // RN-INV-41 / AC-ITE-03-8: la composición no puede formar ciclos ni directos ni
+    // indirectos. Al agregar parent → child, el ciclo aparece si child ya contiene
+    // (transitivamente) a parent.
+    if (parentItemId && (await childContains(parentItemId, component.childItemId))) {
+      throw new AppError(
+        'La composición no puede formar un ciclo',
+        HTTP_STATUS.CONFLICT,
+        'COMPONENT_CYCLE'
+      );
+    }
   }
+}
+
+/**
+ * ¿`candidateChildId` contiene a `ancestorId` de forma directa o transitiva?
+ * Recorre el grafo de composición del catálogo.
+ */
+async function childContains(ancestorId, candidateChildId) {
+  const visited = new Set();
+  const stack = [candidateChildId];
+
+  while (stack.length > 0) {
+    const currentId = stack.pop();
+    if (currentId === ancestorId) return true;
+    if (visited.has(currentId)) continue;
+    visited.add(currentId);
+
+    const children = await prisma.itemComponent.findMany({
+      where: { parentItemId: currentId },
+      select: { childItemId: true },
+    });
+    stack.push(...children.map((row) => row.childItemId));
+  }
+
+  return false;
 }
 
 async function calculateStock(item) {
