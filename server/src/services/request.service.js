@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import { requestRepository } from '../repositories/request.repository.js';
+import { notificationRepository } from '../repositories/notification.repository.js';
 import { itemRepository } from '../repositories/item.repository.js';
 import { environmentRepository } from '../repositories/environment.repository.js';
 import { AppError } from '../utils/AppError.js';
@@ -135,6 +136,115 @@ export const requestService = {
   },
 
   /**
+   * RN-SOL-05: el instructor modifica su solicitud mientras sigue PENDING. Es un cambio de
+   * reserva: se libera la anterior y se reserva la nueva, de forma atómica.
+   */
+  async modifyRequest(requesterId, id, data = {}) {
+    return prisma.$transaction(async (tx) => {
+      const request = await requestRepository.findById(id, { tx });
+      if (!request) {
+        throw new AppError('Solicitud no encontrada', HTTP_STATUS.NOT_FOUND, 'REQUEST_NOT_FOUND');
+      }
+      if (request.requesterId !== requesterId) {
+        throw new AppError('No puede modificar esa solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
+      }
+      if (request.status !== 'PENDING') {
+        throw new AppError(
+          'Solo se pueden modificar solicitudes pendientes',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
+      }
+
+      const newLines = data.items
+        ? data.items
+        : request.requestItems.map((item) => ({
+            itemId: item.itemId,
+            requestedQty: item.requestedQty,
+          }));
+
+      const uniqueItemIds = new Set(newLines.map((line) => line.itemId));
+      if (uniqueItemIds.size !== newLines.length) {
+        throw new AppError(
+          'No puede repetir ítems en la solicitud',
+          HTTP_STATUS.BAD_REQUEST,
+          'DUPLICATED_ITEMS'
+        );
+      }
+
+      const range = buildReservationRange({
+        pickupDate: data.pickupDate ?? request.pickupDate,
+        estimatedDate: data.estimatedDate ?? request.estimatedDate,
+      });
+
+      const itemsById = new Map();
+      for (const line of newLines) {
+        const item = await itemRepository.findById(line.itemId);
+        if (!item) {
+          throw new AppError(`Ítem no encontrado: ${line.itemId}`, HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+        }
+        if (!item.isActive) {
+          throw new AppError(
+            `Ítem no disponible: ${item.name}`,
+            HTTP_STATUS.CONFLICT,
+            'ITEM_NOT_AVAILABLE'
+          );
+        }
+        itemsById.set(line.itemId, item);
+
+        const available = item.isConsumable
+          ? item.stock ?? 0
+          : await countAvailableUnitsForRange(line.itemId, range, tx, {
+              ignoreRequestId: id,
+            });
+        if (available < line.requestedQty) {
+          throw new AppError(
+            `Stock insuficiente para ${item.name}. Disponible: ${available}, solicitado: ${line.requestedQty}`,
+            HTTP_STATUS.CONFLICT,
+            'INSUFFICIENT_STOCK'
+          );
+        }
+      }
+
+      // Cambio de reserva atómico: se libera la anterior y se reserva la nueva.
+      await releaseAssignedUnits(id, tx);
+      await tx.requestItem.deleteMany({ where: { requestId: id } });
+
+      const createdItems = [];
+      for (const line of newLines) {
+        const created = await tx.requestItem.create({
+          data: { requestId: id, itemId: line.itemId, requestedQty: line.requestedQty },
+        });
+        createdItems.push(created);
+      }
+
+      await requestRepository.update(
+        id,
+        {
+          pickupDate: range.pickupDate,
+          estimatedDate: range.estimatedDate,
+          observations: data.observations ?? request.observations,
+        },
+        { tx }
+      );
+
+      for (const requestItem of createdItems) {
+        const item = itemsById.get(requestItem.itemId);
+        if (item?.isConsumable) continue;
+        await assignUnitsToRequestItem(
+          requestItem.id,
+          requestItem.itemId,
+          requestItem.requestedQty,
+          tx,
+          { actorId: requesterId, requestId: id, range }
+        );
+      }
+
+      return { request: await requestRepository.findById(id, { tx }) };
+    });
+  },
+
+  /**
    * RN-SOL-03/04/09: aprobar decide sobre el pedido. Puede reducir cantidades, nunca
    * aumentarlas sobre lo solicitado, y no puede aprobar más de lo disponible para el rango.
    * Si el total aprobado queda por debajo del solicitado, la nota es obligatoria.
@@ -238,6 +348,18 @@ export const requestService = {
         { tx }
       );
 
+      // RN-NOT-01: aviso de aprobación (no es el aviso de "listo para retirar").
+      await notificationRepository.create(
+        {
+          userId: request.requesterId,
+          requestId: id,
+          type: 'REQUEST_APPROVED',
+          title: 'Solicitud aprobada',
+          message: `Tu solicitud ${request.code} fue aprobada.`,
+        },
+        { tx }
+      );
+
       return { request: await requestRepository.findById(id, { tx }) };
     });
   },
@@ -271,6 +393,11 @@ export const requestService = {
     });
   },
 
+  /**
+   * RN-SOL-02 / RN-INV-02/24 / RN-NOT-01: empacar verifica, asigna los seriales concretos y
+   * avisa al instructor que puede retirar. Un compuesto sin obligatorios no se empaca; un
+   * opcional ausente se documenta. Los consumibles no se descuentan aquí.
+   */
   async packRequest(adminId, id) {
     return prisma.$transaction(async (tx) => {
       const request = await requestRepository.findById(id, { tx });
@@ -279,21 +406,24 @@ export const requestService = {
       }
 
       if (request.status !== 'APPROVED') {
-        throw new AppError('Solo se pueden empacar solicitudes aprobadas', HTTP_STATUS.CONFLICT, 'INVALID_STATUS');
+        throw new AppError(
+          'Solo se pueden empacar solicitudes aprobadas',
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
       }
 
+      const range = rangeFromRequest(request);
       const requestItems = await requestRepository.findRequestItemsByRequestId(id, { tx });
+      const packingNotes = [];
 
-      // Las unidades se reservaron al crear la solicitud. Si falta alguna
-      // (solicitudes anteriores a la reserva inmediata), se asigna aquí como respaldo.
       for (const requestItem of requestItems) {
         const item = await itemRepository.findById(requestItem.itemId);
-        // RN-INV-11: el consumible no tiene unidades que asignar y su stock no cambia al
-        // empacar, pero la cantidad se verifica también aquí (puede haber cambiado desde
-        // que se creó la solicitud) y vuelve a verificarse al entregar.
+        const needed = requestItem.approvedQty ?? requestItem.requestedQty;
+
+        // RN-INV-11: el consumible se verifica pero no se descuenta al empacar.
         if (item?.isConsumable) {
-          const neededQty = requestItem.approvedQty ?? requestItem.requestedQty;
-          if ((item.stock ?? 0) < neededQty) {
+          if ((item.stock ?? 0) < needed) {
             throw new AppError(
               `Stock insuficiente de ${item.name}`,
               HTTP_STATUS.CONFLICT,
@@ -303,16 +433,79 @@ export const requestService = {
           continue;
         }
 
-        const needed = requestItem.approvedQty ?? requestItem.requestedQty;
-        const assigned = countAssignedParentUnits(requestItem);
-        const missing = needed - assigned;
+        // RN-SOL-09: la cantidad debe seguir cabiendo en el rango (pudo cambiar el stock).
+        const available = await countAvailableUnitsForRange(requestItem.itemId, range, tx, {
+          ignoreRequestId: id,
+        });
+        if (available < needed) {
+          throw new AppError(
+            `Stock insuficiente para ${item?.name ?? 'el ítem'} al empacar`,
+            HTTP_STATUS.CONFLICT,
+            'INSUFFICIENT_STOCK'
+          );
+        }
 
+        // Unidades ya asignadas a esta línea: para un compuesto es la unidad padre; para un
+        // serializado simple es la unidad asignada (puede ser una pieza suelta del conjunto).
+        const assignedForItem = requestItem.assignedUnits.filter(
+          (assignment) => assignment.inventoryUnit?.itemId === requestItem.itemId
+        );
+        const missing = needed - assignedForItem.length;
         if (missing > 0) {
           await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, missing, tx, {
             actorId: adminId,
             requestId: id,
-            range: rangeFromRequest(request),
+            range,
           });
+        }
+
+        // RN-INV-02/24: comprobar la completitud funcional del compuesto asignado.
+        const components = await itemRepository.findComponents(requestItem.itemId);
+        if (components.length > 0) {
+          const parents = await tx.inventoryUnit.findMany({
+            where: {
+              id: {
+                in: requestItem.assignedUnits
+                  .map((assignment) => assignment.inventoryUnitId)
+                  .filter(Boolean),
+              },
+              itemId: requestItem.itemId,
+              parentUnitId: null,
+            },
+            include: {
+              childUnits: {
+                where: { status: { in: ['AVAILABLE', 'RESERVED'] }, declaredLost: false },
+                select: { id: true, itemId: true },
+              },
+            },
+          });
+
+          const presentByItem = new Map();
+          for (const parent of parents) {
+            const counts = new Map();
+            for (const child of parent.childUnits) {
+              counts.set(child.itemId, (counts.get(child.itemId) || 0) + 1);
+            }
+            presentByItem.set(parent.id, counts);
+          }
+
+          for (const parent of parents) {
+            const counts = presentByItem.get(parent.id) || new Map();
+            for (const component of components) {
+              const presentQty = counts.get(component.childItemId) || 0;
+              if (presentQty >= (component.quantity ?? 1)) continue;
+              if (component.isRequired) {
+                throw new AppError(
+                  `El conjunto ${parent.id} no tiene el componente obligatorio ${component.childItem?.name ?? component.childItemId}`,
+                  HTTP_STATUS.CONFLICT,
+                  'INCOMPLETE_ASSEMBLY'
+                );
+              }
+              packingNotes.push(
+                `Falta componente opcional: ${component.childItem?.name ?? component.childItemId}`
+              );
+            }
+          }
         }
       }
 
@@ -322,6 +515,21 @@ export const requestService = {
           status: 'PACKED',
           packedById: adminId,
           packedAt: new Date(),
+          ...(packingNotes.length > 0
+            ? { packingNotes: [...new Set(packingNotes)].join('; ') }
+            : {}),
+        },
+        { tx }
+      );
+
+      // RN-NOT-01 / AC-SOL-05-6: exactamente un aviso de "listo para retirar".
+      await notificationRepository.create(
+        {
+          userId: request.requesterId,
+          requestId: id,
+          type: 'PICKUP_READY',
+          title: 'Listo para retirar',
+          message: `Tu solicitud ${request.code} está empacada y puedes retirarla.`,
         },
         { tx }
       );

@@ -28,6 +28,15 @@ export const requestController = {
     successResponse(res, result);
   }),
 
+  update: asyncHandler(async (req, res) => {
+    const result = await requestService.modifyRequest(
+      req.user.userId,
+      Number(req.params.id),
+      req.body || {}
+    );
+    successResponse(res, result, 'Solicitud modificada correctamente');
+  }),
+
   approve: asyncHandler(async (req, res) => {
     const result = await requestService.approveRequest(
       req.user.userId,

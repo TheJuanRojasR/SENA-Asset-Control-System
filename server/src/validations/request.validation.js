@@ -22,6 +22,22 @@ export const createRequestSchema = z.object({
 
 // RN-SOL-03/04: el administrador puede reducir cantidades; la nota es obligatoria si el
 // total aprobado queda por debajo del solicitado.
+// RN-SOL-05: el instructor solo modifica su solicitud mientras está PENDING.
+export const updateRequestSchema = z.object({
+  pickupDate: z.coerce.date().optional(),
+  estimatedDate: z.coerce.date().optional(),
+  observations: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        itemId: z.number().int().positive('El ítem es requerido'),
+        requestedQty: z.number().int().positive('La cantidad debe ser mayor a 0'),
+      })
+    )
+    .min(1, 'Debe incluir al menos un ítem')
+    .optional(),
+});
+
 export const approveRequestSchema = z.object({
   items: z
     .array(

@@ -5,6 +5,7 @@ import { authorize } from '../middlewares/role.js';
 import { validateBody, validateRequest } from '../middlewares/validateRequest.js';
 import {
   createRequestSchema,
+  updateRequestSchema,
   approveRequestSchema,
   rejectRequestSchema,
   requestIdParamSchema,
@@ -27,6 +28,14 @@ router.get(
   authorize('ADMIN', 'INSTRUCTOR'),
   validateRequest(requestIdParamSchema),
   requestController.getById
+);
+// RN-SOL-05: el instructor modifica su solicitud mientras está PENDIENTE.
+router.put(
+  '/:id',
+  authorize('INSTRUCTOR'),
+  validateRequest(requestIdParamSchema),
+  validateBody(updateRequestSchema),
+  requestController.update
 );
 router.put(
   '/:id/approve',
