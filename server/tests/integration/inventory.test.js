@@ -2,6 +2,7 @@ import request from 'supertest';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import inventoryRoutes from '../../src/routes/inventory.routes.js';
+import requestRoutes from '../../src/routes/request.routes.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { generateTokens } from '../../src/utils/jwt.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
@@ -10,6 +11,7 @@ function buildApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/inventory', inventoryRoutes);
+  app.use('/api/requests', requestRoutes);
   app.use(errorHandler);
   return app;
 }
@@ -555,6 +557,397 @@ describe('Inventory endpoints', () => {
 
       expect(response.status).toBe(403);
       expect(await countUnits(item.id)).toBe(before);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-02 — Ensamblar un equipo compuesto (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-02 — Ensamblaje de compuestos', () => {
+    const createCompound = async (name, components) => {
+      const compound = await prismaTest.item.create({
+        data: { code: `CMP-${Date.now()}-${Math.random()}`, name, categoryId: category.id },
+      });
+      for (const component of components) {
+        await prismaTest.itemComponent.create({
+          data: {
+            parentItemId: compound.id,
+            childItemId: component.item.id,
+            isRequired: component.isRequired ?? true,
+            quantity: component.quantity ?? 1,
+          },
+        });
+      }
+      return compound;
+    };
+
+    const createUnitFor = (targetItem, serial) =>
+      prismaTest.inventoryUnit.create({
+        data: {
+          itemId: targetItem.id,
+          serialNumber: serial,
+          status: 'AVAILABLE',
+          physicalState: 'OPERATIVO',
+        },
+      });
+
+    const assemble = (parentId, childUnitIds) =>
+      request(app)
+        .post(`/api/inventory/${parentId}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds });
+
+    const detail = (unitId) =>
+      request(app).get(`/api/inventory/${unitId}/detail`).set('Authorization', authHeader(admin));
+
+    it('AC-INV-02-1 — El ensamblaje de todos los obligatorios deja la unidad completa', async () => {
+      const first = await prismaTest.item.create({
+        data: { code: 'C1', name: 'Componente 1', categoryId: category.id },
+      });
+      const second = await prismaTest.item.create({
+        data: { code: 'C2', name: 'Componente 2', categoryId: category.id },
+      });
+      const compound = await createCompound('Compuesto completo', [
+        { item: first },
+        { item: second },
+      ]);
+      const parentUnit = await createUnitFor(compound, 'CMP-U-001');
+      const childOne = await createUnitFor(first, 'CMP-C-001');
+      const childTwo = await createUnitFor(second, 'CMP-C-002');
+
+      const response = await assemble(parentUnit.id, [childOne.id, childTwo.id]);
+      expect(response.status).toBe(200);
+
+      const children = await prismaTest.inventoryUnit.findMany({
+        where: { parentUnitId: parentUnit.id },
+      });
+      expect(children).toHaveLength(2);
+      const detailResponse = await detail(parentUnit.id);
+      expect(detailResponse.body.data.unit.isComplete).toBe(true);
+    });
+
+    it('AC-INV-02-2 — El ensamblaje parcial se acepta y deja la unidad incompleta', async () => {
+      const first = await prismaTest.item.create({
+        data: { code: 'P1', name: 'Pieza 1', categoryId: category.id },
+      });
+      const second = await prismaTest.item.create({
+        data: { code: 'P2', name: 'Pieza 2', categoryId: category.id },
+      });
+      const missing = await prismaTest.item.create({
+        data: { code: 'P3', name: 'Pieza 3', categoryId: category.id },
+      });
+      const compound = await createCompound('Compuesto parcial', [
+        { item: first },
+        { item: second },
+        { item: missing },
+      ]);
+      const parentUnit = await createUnitFor(compound, 'PAR-U-001');
+      const childOne = await createUnitFor(first, 'PAR-C-001');
+      const childTwo = await createUnitFor(second, 'PAR-C-002');
+
+      const response = await assemble(parentUnit.id, [childOne.id, childTwo.id]);
+      expect(response.status).toBe(200);
+
+      const detailResponse = await detail(parentUnit.id);
+      expect(detailResponse.body.data.unit.isComplete).toBe(false);
+      const missingIds = detailResponse.body.data.unit.missingComponents.map(
+        (component) => component.childItemId
+      );
+      expect(missingIds).toContain(missing.id);
+    });
+
+    it('AC-INV-02-3 — Un componente que no pertenece al compuesto se rechaza sin ensamblar', async () => {
+      const valid = await prismaTest.item.create({
+        data: { code: 'V1', name: 'Válido', categoryId: category.id },
+      });
+      const invalid = await prismaTest.item.create({
+        data: { code: 'I1', name: 'Ajeno', categoryId: category.id },
+      });
+      const compound = await createCompound('Compuesto atómico', [{ item: valid }]);
+      const parentUnit = await createUnitFor(compound, 'ATO-U-001');
+      const validUnit = await createUnitFor(valid, 'ATO-C-001');
+      const invalidUnit = await createUnitFor(invalid, 'ATO-C-002');
+
+      const response = await assemble(parentUnit.id, [validUnit.id, invalidUnit.id]);
+      expect(response.status).toBe(400);
+
+      const units = await prismaTest.inventoryUnit.findMany({
+        where: { id: { in: [validUnit.id, invalidUnit.id] } },
+      });
+      units.forEach((unit) => expect(unit.parentUnitId).toBeNull());
+    });
+
+    it('AC-INV-02-4 — Un componente que ya está dentro de otro equipo se rechaza', async () => {
+      const componentItem = await prismaTest.item.create({
+        data: { code: 'D1', name: 'Componente compartido', categoryId: category.id },
+      });
+      const secondCompound = await createCompound('Otro compuesto', [
+        { item: componentItem },
+      ]);
+      const firstCompound = await createCompound('Compuesto destino', [
+        { item: componentItem },
+      ]);
+      const otherParent = await createUnitFor(secondCompound, 'OTRO-P-001');
+      const componentUnit = await createUnitFor(componentItem, 'OTRO-C-001');
+      await prismaTest.inventoryUnit.update({
+        where: { id: componentUnit.id },
+        data: { parentUnitId: otherParent.id },
+      });
+      const targetParent = await createUnitFor(firstCompound, 'DEST-P-001');
+
+      const response = await assemble(targetParent.id, [componentUnit.id]);
+      expect(response.status).toBe(409);
+
+      const stored = await prismaTest.inventoryUnit.findUnique({
+        where: { id: componentUnit.id },
+      });
+      expect(stored.parentUnitId).toBe(otherParent.id);
+    });
+
+    it('AC-INV-02-5 — Un componente prestado se rechaza sin tocar el préstamo', async () => {
+      const componentItem = await prismaTest.item.create({
+        data: { code: 'L1', name: 'Componente prestado', categoryId: category.id },
+      });
+      const compound = await createCompound('Compuesto con prestado', [
+        { item: componentItem },
+      ]);
+      const parentUnit = await createUnitFor(compound, 'PRE-P-001');
+      const componentUnit = await createUnitFor(componentItem, 'PRE-C-001');
+      await prismaTest.inventoryUnit.update({
+        where: { id: componentUnit.id },
+        data: { status: 'LOANED' },
+      });
+
+      const response = await assemble(parentUnit.id, [componentUnit.id]);
+      expect(response.status).toBe(409);
+
+      const stored = await prismaTest.inventoryUnit.findUnique({
+        where: { id: componentUnit.id },
+      });
+      expect(stored.status).toBe('LOANED');
+      expect(stored.parentUnitId).toBeNull();
+    });
+
+    it('AC-INV-02-6 — Los componentes de un conjunto comprometido no se ofrecen por separado', async () => {
+      const first = await prismaTest.item.create({
+        data: { code: 'K1', name: 'Pieza kit 1', categoryId: category.id },
+      });
+      const second = await prismaTest.item.create({
+        data: { code: 'K2', name: 'Pieza kit 2', categoryId: category.id },
+      });
+      const compound = await createCompound('Kit comprometido', [
+        { item: first },
+        { item: second },
+      ]);
+      await createUnitFor(compound, 'KIT-U-001');
+      const childOne = await createUnitFor(first, 'KIT-C-001');
+      const childTwo = await createUnitFor(second, 'KIT-C-002');
+      const parent = await prismaTest.inventoryUnit.findFirst({ where: { itemId: compound.id } });
+      await assemble(parent.id, [childOne.id, childTwo.id]);
+
+      const created = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: compound.id, requestedQty: 1 }] });
+      expect(created.status).toBe(201);
+
+      const inventory = await request(app)
+        .get('/api/inventory')
+        .query({ itemId: first.id })
+        .set('Authorization', authHeader(admin));
+      const available = inventory.body.data.data.filter((row) => row.status === 'AVAILABLE');
+      expect(available).toHaveLength(0);
+
+      const stillAssembled = await prismaTest.inventoryUnit.findUnique({
+        where: { id: childOne.id },
+      });
+      expect(stillAssembled.parentUnitId).toBe(parent.id);
+    });
+
+    it('AC-INV-02-7 — Un componente ensamblado no se cuenta dos veces', async () => {
+      const first = await prismaTest.item.create({
+        data: { code: 'N1', name: 'Pieza 1', categoryId: category.id },
+      });
+      const second = await prismaTest.item.create({
+        data: { code: 'N2', name: 'Pieza 2', categoryId: category.id },
+      });
+      const compound = await createCompound('Compuesto solicitado', [
+        { item: first },
+        { item: second },
+      ]);
+      const parent = await createUnitFor(compound, 'SOL-U-001');
+      const childOne = await createUnitFor(first, 'SOL-C-001');
+      const childTwo = await createUnitFor(second, 'SOL-C-002');
+      await assemble(parent.id, [childOne.id, childTwo.id]);
+
+      const created = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: compound.id, requestedQty: 1 }] });
+      expect(created.status).toBe(201);
+      const requestId = created.body.data.request.id;
+
+      const assignments = await prismaTest.requestItemUnit.findMany({
+        where: { requestItem: { requestId } },
+      });
+      const assignedIds = assignments.map((assignment) => assignment.inventoryUnitId).sort();
+      expect(assignedIds).toEqual([parent.id, childOne.id, childTwo.id].sort());
+
+      const units = await prismaTest.inventoryUnit.findMany({
+        where: { id: { in: [childOne.id, childTwo.id] } },
+      });
+      units.forEach((unit) => expect(unit.status).toBe('RESERVED'));
+    });
+
+    it('AC-INV-02-8 — El aparato de un kit es un elemento independiente', async () => {
+      const apparatus = await prismaTest.item.create({
+        data: { code: 'APP-001', name: 'Aparato', categoryId: category.id },
+      });
+      const accessory = await prismaTest.item.create({
+        data: { code: 'ACC-001', name: 'Accesorio', categoryId: category.id },
+      });
+      const kit = await createCompound('Kit con aparato', [
+        { item: apparatus },
+        { item: accessory },
+      ]);
+      const kitUnit = await createUnitFor(kit, 'KIT2-U-001');
+      const apparatusUnit = await createUnitFor(apparatus, 'APP-U-001');
+      const accessoryUnit = await createUnitFor(accessory, 'ACC-U-001');
+      await assemble(kitUnit.id, [apparatusUnit.id, accessoryUnit.id]);
+
+      const created = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: apparatus.id, requestedQty: 1 }] });
+      expect(created.status).toBe(201);
+
+      const apparatusAfter = await prismaTest.inventoryUnit.findUnique({
+        where: { id: apparatusUnit.id },
+      });
+      const accessoryAfter = await prismaTest.inventoryUnit.findUnique({
+        where: { id: accessoryUnit.id },
+      });
+      expect(apparatusAfter.status).toBe('RESERVED');
+      expect(accessoryAfter.status).toBe('AVAILABLE');
+      expect(accessoryAfter.parentUnitId).toBe(kitUnit.id);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-03 — Desensamblar un componente (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-03 — Desensamblaje', () => {
+    const setupAssembled = async () => {
+      const first = await prismaTest.item.create({
+        data: { code: `DA-${Date.now()}`, name: 'Pieza A', categoryId: category.id },
+      });
+      const second = await prismaTest.item.create({
+        data: { code: `DB-${Date.now()}`, name: 'Pieza B', categoryId: category.id },
+      });
+      const compound = await prismaTest.item.create({
+        data: { code: `DC-${Date.now()}`, name: 'Compuesto', categoryId: category.id },
+      });
+      await prismaTest.itemComponent.createMany({
+        data: [
+          { parentItemId: compound.id, childItemId: first.id },
+          { parentItemId: compound.id, childItemId: second.id },
+        ],
+      });
+      const parentUnit = await prismaTest.inventoryUnit.create({
+        data: { itemId: compound.id, serialNumber: `DCP-${Date.now()}`, status: 'AVAILABLE' },
+      });
+      const childOne = await prismaTest.inventoryUnit.create({
+        data: { itemId: first.id, serialNumber: `DAU-${Date.now()}`, status: 'AVAILABLE' },
+      });
+      const childTwo = await prismaTest.inventoryUnit.create({
+        data: { itemId: second.id, serialNumber: `DBU-${Date.now()}`, status: 'AVAILABLE' },
+      });
+      await request(app)
+        .post(`/api/inventory/${parentUnit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [childOne.id, childTwo.id] });
+      return { compound, parentUnit, childOne, childTwo };
+    };
+
+    const disassemble = (parentId, childUnitIds) =>
+      request(app)
+        .post(`/api/inventory/${parentId}/disassemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds });
+
+    it('AC-INV-03-1 — Desensamblar libera el componente y no arrastra al resto', async () => {
+      const { parentUnit, childOne, childTwo } = await setupAssembled();
+
+      const response = await disassemble(parentUnit.id, [childOne.id]);
+      expect(response.status).toBe(200);
+
+      const released = await prismaTest.inventoryUnit.findUnique({ where: { id: childOne.id } });
+      const stillInside = await prismaTest.inventoryUnit.findUnique({ where: { id: childTwo.id } });
+      expect(released.parentUnitId).toBeNull();
+      expect(released.status).toBe('AVAILABLE');
+      expect(stillInside.parentUnitId).toBe(parentUnit.id);
+    });
+
+    it('AC-INV-03-2 — No se puede desensamblar un equipo comprometido', async () => {
+      // Reserva activa: la solicitud reserva el conjunto y sus piezas.
+      const reservedSetup = await setupAssembled();
+      const reserved = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: reservedSetup.compound.id, requestedQty: 1 }] });
+      expect(reserved.status).toBe(201);
+
+      const reservedAttempt = await disassemble(reservedSetup.parentUnit.id, [
+        reservedSetup.childOne.id,
+      ]);
+      expect(reservedAttempt.status).toBe(409);
+      const childAfterReservation = await prismaTest.inventoryUnit.findUnique({
+        where: { id: reservedSetup.childOne.id },
+      });
+      expect(childAfterReservation.parentUnitId).toBe(reservedSetup.parentUnit.id);
+
+      // Préstamo vigente: se entrega el conjunto y se intenta desensamblar.
+      const loanSetup = await setupAssembled();
+      const created = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: loanSetup.compound.id, requestedQty: 1 }] });
+      const loanRequestId = created.body.data.request.id;
+      await request(app)
+        .put(`/api/requests/${loanRequestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${loanRequestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${loanRequestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+
+      const loanAttempt = await disassemble(loanSetup.parentUnit.id, [loanSetup.childOne.id]);
+      expect(loanAttempt.status).toBe(409);
+      const parentAfterLoan = await prismaTest.inventoryUnit.findUnique({
+        where: { id: loanSetup.parentUnit.id },
+      });
+      expect(parentAfterLoan.status).toBe('LOANED');
+    });
+
+    it('AC-INV-03-3 — Desensamblar un obligatorio rompe la marca de completo', async () => {
+      const { parentUnit, childOne } = await setupAssembled();
+
+      const before = await request(app)
+        .get(`/api/inventory/${parentUnit.id}/detail`)
+        .set('Authorization', authHeader(admin));
+      expect(before.body.data.unit.isComplete).toBe(true);
+
+      const response = await disassemble(parentUnit.id, [childOne.id]);
+      expect(response.status).toBe(200);
+
+      const after = await request(app)
+        .get(`/api/inventory/${parentUnit.id}/detail`)
+        .set('Authorization', authHeader(admin));
+      expect(after.body.data.unit.isComplete).toBe(false);
+      const released = await prismaTest.inventoryUnit.findUnique({ where: { id: childOne.id } });
+      expect(released.status).toBe('AVAILABLE');
     });
   });
 });
