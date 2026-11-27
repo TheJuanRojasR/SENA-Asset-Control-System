@@ -64,7 +64,25 @@ export const inventoryService = {
     if (!unit) {
       throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
     }
-    return { unit };
+
+    // AC-USR-03-3 / RN-PRE-02: si la unidad está prestada, la consulta informa al tenedor
+    // (aunque esté desactivado) y desde cuándo la tiene. El préstamo no se pierde al
+    // desactivar al instructor.
+    const loan = await inventoryRepository.findActiveLoan(id);
+    const requester = loan?.requestItem?.request?.requester;
+    const holder = requester
+      ? {
+          id: requester.id,
+          fullName: requester.fullName,
+          email: requester.email,
+          isActive: requester.isActive,
+          loanedAt: loan.loanedAt,
+          requestId: loan.requestItem.request.id,
+          requestCode: loan.requestItem.request.code,
+        }
+      : null;
+
+    return { unit: { ...unit, holder } };
   },
 
   async updateInventoryUnit(id, data) {

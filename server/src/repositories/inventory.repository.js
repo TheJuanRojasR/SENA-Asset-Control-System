@@ -55,6 +55,44 @@ export const inventoryRepository = {
     });
   },
 
+  /**
+   * AC-USR-03-3: quién tiene una unidad ahora mismo. El préstamo real vive en
+   * RequestItemUnit (loanedAt sin returnedAt); de ahí se sube a la solicitud y a su
+   * solicitante para informar tenedor, estado y desde cuándo.
+   */
+  async findActiveLoan(unitId) {
+    return prisma.requestItemUnit.findFirst({
+      where: {
+        inventoryUnitId: unitId,
+        loanedAt: { not: null },
+        returnedAt: null,
+      },
+      orderBy: { loanedAt: 'desc' },
+      select: {
+        loanedAt: true,
+        requestItem: {
+          select: {
+            request: {
+              select: {
+                id: true,
+                code: true,
+                status: true,
+                requester: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    isActive: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  },
+
   async findBySerialNumber(serialNumber) {
     return prisma.inventoryUnit.findFirst({
       where: { serialNumber },
