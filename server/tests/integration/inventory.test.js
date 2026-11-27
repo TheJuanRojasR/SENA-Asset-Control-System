@@ -3,6 +3,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import inventoryRoutes from '../../src/routes/inventory.routes.js';
 import requestRoutes from '../../src/routes/request.routes.js';
+import itemRoutes from '../../src/routes/item.routes.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { generateTokens } from '../../src/utils/jwt.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
@@ -12,6 +13,7 @@ function buildApp() {
   app.use(express.json());
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/requests', requestRoutes);
+  app.use('/api/items', itemRoutes);
   app.use(errorHandler);
   return app;
 }
@@ -948,6 +950,210 @@ describe('Inventory endpoints', () => {
       expect(after.body.data.unit.isComplete).toBe(false);
       const released = await prismaTest.inventoryUnit.findUnique({ where: { id: childOne.id } });
       expect(released.status).toBe('AVAILABLE');
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-04 — Controlar consumibles por cantidad (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-04 — Consumibles por cantidad', () => {
+    const createConsumable = async (overrides = {}) => {
+      const response = await request(app)
+        .post('/api/items')
+        .set('Authorization', authHeader(admin))
+        .send({
+          code: `CON-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: 'Consumible',
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'LITRO',
+          initialQty: 100,
+          ...overrides,
+        });
+      return response;
+    };
+
+    const getItem = (id) =>
+      request(app).get(`/api/items/${id}`).set('Authorization', authHeader(admin));
+
+    const adjustStock = (id, stock) =>
+      request(app)
+        .patch(`/api/items/${id}/stock`)
+        .set('Authorization', authHeader(admin))
+        .send({ stock });
+
+    const createConsumableRequest = (itemId, requestedQty) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId, requestedQty }] });
+
+    it('AC-INV-04-1 — El stock parte de la cantidad inicial y sin unidades', async () => {
+      const response = await createConsumable({ initialQty: 100 });
+      expect(response.status).toBe(201);
+      const itemId = response.body.data.item.id;
+
+      const stored = await getItem(itemId);
+      expect(stored.status).toBe(200);
+      expect(stored.body.data.item.stock).toBe(100);
+      expect(stored.body.data.item.unit).toBe('LITRO');
+      expect(stored.body.data.item.isConsumable).toBe(true);
+      expect(await prismaTest.inventoryUnit.count({ where: { itemId } })).toBe(0);
+
+      const list = await request(app)
+        .get('/api/items')
+        .set('Authorization', authHeader(admin));
+      const consumables = list.body.data.data.filter((row) => row.isConsumable);
+      expect(consumables.some((row) => row.id === itemId)).toBe(true);
+    });
+
+    it('AC-INV-04-2 — Un consumible no admite unidades serializadas', async () => {
+      const created = await createConsumable({ initialQty: 100 });
+      const itemId = created.body.data.item.id;
+
+      const response = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(admin))
+        .send({ itemId, serialNumber: 'NO-DEBE-EXISTIR' });
+
+      expect(response.status).toBe(409);
+      expect(await prismaTest.inventoryUnit.count({ where: { itemId } })).toBe(0);
+      const stored = await getItem(itemId);
+      expect(stored.body.data.item.stock).toBe(100);
+    });
+
+    it('AC-INV-04-3 — El stock es la cantidad, no el conteo de unidades', async () => {
+      const created = await createConsumable({ initialQty: 100 });
+      const itemId = created.body.data.item.id;
+
+      const stored = await getItem(itemId);
+      expect(stored.body.data.item.stock).toBe(100);
+      expect(stored.body.data.item.unit).toBe('LITRO');
+      expect(stored.body.data.item.stock).not.toBe(0);
+      expect(await prismaTest.inventoryUnit.count({ where: { itemId } })).toBe(0);
+    });
+
+    it('AC-INV-04-4 — La entrega descuenta cantidad y empacar no descuenta', async () => {
+      const created = await createConsumable({ initialQty: 100 });
+      const itemId = created.body.data.item.id;
+
+      const requestResponse = await createConsumableRequest(itemId, 2);
+      expect(requestResponse.status).toBe(201);
+      const requestId = requestResponse.body.data.request.id;
+
+      await request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      const packed = await request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      expect(packed.status).toBe(200);
+      expect((await getItem(itemId)).body.data.item.stock).toBe(100);
+
+      // Un consumible no deja reserva por rango con fecha.
+      expect(
+        await prismaTest.requestItemUnit.count({
+          where: { requestItem: { requestId } },
+        })
+      ).toBe(0);
+      expect(
+        await prismaTest.movement.count({ where: { requestId, type: 'RESERVATION' } })
+      ).toBe(0);
+
+      const delivered = await request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+      expect(delivered.status).toBe(200);
+      expect((await getItem(itemId)).body.data.item.stock).toBe(98);
+      expect(await prismaTest.inventoryUnit.count({ where: { itemId } })).toBe(0);
+    });
+
+    it('AC-INV-04-5 — El stock no puede quedar negativo', async () => {
+      const created = await createConsumable({ initialQty: 10 });
+      const itemId = created.body.data.item.id;
+
+      const response = await createConsumableRequest(itemId, 15);
+      expect(response.status).toBe(409);
+      expect((await getItem(itemId)).body.data.item.stock).toBe(10);
+
+      const negative = await adjustStock(itemId, -1);
+      expect(negative.status).toBe(400);
+      expect((await getItem(itemId)).body.data.item.stock).toBe(10);
+    });
+
+    it('AC-INV-04-6 — Cada consumible conserva su propia unidad de medida', async () => {
+      const liters = await createConsumable({ unit: 'LITRO', initialQty: 10 });
+      const meters = await createConsumable({ unit: 'METRO', initialQty: 100 });
+
+      const list = await request(app)
+        .get('/api/items')
+        .set('Authorization', authHeader(admin));
+      const rows = list.body.data.data;
+      const literRow = rows.find((row) => row.id === liters.body.data.item.id);
+      const meterRow = rows.find((row) => row.id === meters.body.data.item.id);
+      expect(literRow.unit).toBe('LITRO');
+      expect(literRow.stock).toBe(10);
+      expect(meterRow.unit).toBe('METRO');
+      expect(meterRow.stock).toBe(100);
+    });
+
+    it('AC-INV-04-7 — Una cantidad decimal de consumible se rechaza', async () => {
+      const created = await createConsumable({ initialQty: 100 });
+      const itemId = created.body.data.item.id;
+
+      const decimalRequest = await createConsumableRequest(itemId, 2.5);
+      expect(decimalRequest.status).toBe(400);
+      expect(JSON.stringify(decimalRequest.body).toLowerCase()).toMatch(/entero|integer/);
+      expect((await getItem(itemId)).body.data.item.stock).toBe(100);
+
+      const decimalStock = await adjustStock(itemId, 2.5);
+      expect(decimalStock.status).toBe(400);
+      expect((await getItem(itemId)).body.data.item.stock).toBe(100);
+    });
+
+    it('AC-INV-04-8 — La entrega se rechaza si la cantidad ya no existe', async () => {
+      // Verificación al empacar: la cantidad bajó después de crear la solicitud.
+      const packCase = await createConsumable({ initialQty: 5 });
+      const packItemId = packCase.body.data.item.id;
+      const packRequest = await createConsumableRequest(packItemId, 5);
+      expect(packRequest.status).toBe(201);
+      const packRequestId = packRequest.body.data.request.id;
+      await adjustStock(packItemId, 2);
+      await request(app)
+        .put(`/api/requests/${packRequestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      const packResponse = await request(app)
+        .put(`/api/requests/${packRequestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      expect(packResponse.status).toBe(409);
+      expect((await getItem(packItemId)).body.data.item.stock).toBe(2);
+
+      // Verificación al entregar: empaquetada con 5 y el stock baja antes de entregar.
+      const deliverCase = await createConsumable({ initialQty: 5 });
+      const deliverItemId = deliverCase.body.data.item.id;
+      const deliverRequest = await createConsumableRequest(deliverItemId, 5);
+      const deliverRequestId = deliverRequest.body.data.request.id;
+      await request(app)
+        .put(`/api/requests/${deliverRequestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      expect(
+        (
+          await request(app)
+            .put(`/api/requests/${deliverRequestId}/pack`)
+            .set('Authorization', authHeader(admin))
+        ).status
+      ).toBe(200);
+      await adjustStock(deliverItemId, 2);
+      const deliverResponse = await request(app)
+        .put(`/api/requests/${deliverRequestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+      expect(deliverResponse.status).toBe(409);
+      expect((await getItem(deliverItemId)).body.data.item.stock).toBe(2);
+      const storedRequest = await prismaTest.request.findUnique({
+        where: { id: deliverRequestId },
+      });
+      expect(storedRequest.status).not.toBe('DELIVERED');
     });
   });
 });
