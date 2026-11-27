@@ -8,6 +8,7 @@ import {
   updateItemSchema,
   itemIdParamSchema,
   listItemsQuerySchema,
+  adjustStockSchema,
 } from '../validations/item.validation.js';
 
 const router = Router();
@@ -24,6 +25,15 @@ router.put(
   validateBody(updateItemSchema),
   itemController.update
 );
+// RN-MOV-01: ajuste de cantidad de un consumible (deja movimiento solo si cambia).
+router.patch(
+  '/:id/stock',
+  authorize('ADMIN'),
+  validateRequest(itemIdParamSchema),
+  validateBody(adjustStockSchema),
+  itemController.adjustStock
+);
+
 // RN-INV-45: el elemento no se elimina físicamente; esta operación es la baja (estado).
 router.delete('/:id', authorize('ADMIN'), validateRequest(itemIdParamSchema), itemController.remove);
 

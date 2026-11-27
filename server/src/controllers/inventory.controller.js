@@ -5,7 +5,7 @@ import { HTTP_STATUS } from '../constants/httpStatus.js';
 
 export const inventoryController = {
   create: asyncHandler(async (req, res) => {
-    const result = await inventoryService.createInventoryUnit(req.body);
+    const result = await inventoryService.createInventoryUnit(req.body, req.user.userId);
     successResponse(res, result, 'Unidad de inventario creada correctamente', HTTP_STATUS.CREATED);
   }),
 
@@ -36,7 +36,11 @@ export const inventoryController = {
   }),
 
   remove: asyncHandler(async (req, res) => {
-    const result = await inventoryService.disposeInventoryUnit(Number(req.params.id));
+    const result = await inventoryService.disposeInventoryUnit(
+      Number(req.params.id),
+      req.user.userId,
+      req.body?.reason || 'Baja de unidad'
+    );
     successResponse(res, result, result.message);
   }),
 

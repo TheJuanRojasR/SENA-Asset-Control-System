@@ -27,9 +27,11 @@ export const requestService = {
     }
 
     return prisma.$transaction(async (tx) => {
+      const itemById = new Map();
       // Validación y reserva atómicas: evita overbooking entre solicitudes simultáneas.
       for (const { itemId, requestedQty } of items) {
         const item = await itemRepository.findById(itemId);
+        itemById.set(itemId, item);
         if (!item) {
           throw new AppError(`Ítem no encontrado: ${itemId}`, HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
         }
@@ -44,7 +46,10 @@ export const requestService = {
           );
         }
 
-        const available = await requestRepository.countAvailableUnitsByItemId(itemId, { tx });
+        // RN-INV-11: el consumible se controla por cantidad, no por unidades físicas.
+        const available = item.isConsumable
+          ? item.stock ?? 0
+          : await requestRepository.countAvailableUnitsByItemId(itemId, { tx });
         if (available < requestedQty) {
           throw new AppError(
             `Stock insuficiente para ${item.name}. Disponible: ${available}, solicitado: ${requestedQty}`,
@@ -75,9 +80,18 @@ export const requestService = {
         { tx }
       );
 
-      // Reserva inmediata: las unidades quedan apartadas desde la creación.
+      // Reserva inmediata: las unidades quedan apartadas desde la creación. Un consumible
+      // no se reserva por fecha (RN-INV-11): solo se reservan unidades serializadas.
       for (const requestItem of request.requestItems) {
-        await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, requestItem.requestedQty, tx);
+        const item = itemById.get(requestItem.itemId);
+        if (item?.isConsumable) continue;
+        await assignUnitsToRequestItem(
+          requestItem.id,
+          requestItem.itemId,
+          requestItem.requestedQty,
+          tx,
+          { actorId: requesterId, requestId: request.id }
+        );
       }
 
       return { request: await requestRepository.findById(request.id, { tx }) };
@@ -199,12 +213,20 @@ export const requestService = {
       // Las unidades se reservaron al crear la solicitud. Si falta alguna
       // (solicitudes anteriores a la reserva inmediata), se asigna aquí como respaldo.
       for (const requestItem of requestItems) {
+        const item = await itemRepository.findById(requestItem.itemId);
+        // RN-INV-11: el consumible no tiene unidades que asignar; su stock no cambia al
+        // empacar (solo al entregar).
+        if (item?.isConsumable) continue;
+
         const needed = requestItem.approvedQty ?? requestItem.requestedQty;
         const assigned = countAssignedParentUnits(requestItem);
         const missing = needed - assigned;
 
         if (missing > 0) {
-          await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, missing, tx);
+          await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, missing, tx, {
+            actorId: adminId,
+            requestId: id,
+          });
         }
       }
 
@@ -238,6 +260,36 @@ export const requestService = {
       await Promise.all(
         requestItems.map(async (requestItem) => {
           const deliveredQty = requestItem.approvedQty ?? requestItem.requestedQty;
+          const item = await itemRepository.findById(requestItem.itemId);
+
+          if (item?.isConsumable) {
+            // RN-INV-11: el consumible se descuenta del stock al entregar, sin unidad.
+            if ((item.stock ?? 0) < deliveredQty) {
+              throw new AppError(
+                `Stock insuficiente de ${item.name}`,
+                HTTP_STATUS.CONFLICT,
+                'INSUFFICIENT_STOCK'
+              );
+            }
+            await tx.item.update({
+              where: { id: item.id },
+              data: { stock: { decrement: deliveredQty } },
+            });
+            await requestRepository.createMovement(
+              {
+                type: 'LOAN',
+                itemId: item.id,
+                quantity: deliveredQty,
+                responsibleId: adminId,
+                requestId: id,
+                notes: 'Entrega de consumible',
+              },
+              { tx }
+            );
+            await requestRepository.updateRequestItem(requestItem.id, { deliveredQty }, { tx });
+            return;
+          }
+
           await requestRepository.updateRequestItem(requestItem.id, { deliveredQty }, { tx });
 
           await Promise.all(
@@ -396,7 +448,7 @@ export const requestService = {
  * (aunque el ensamblaje esté incompleto; la UI muestra el faltante).
  * Ítems simples: reserva unidades directas.
  */
-async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx) {
+async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx, { actorId, requestId } = {}) {
   if (qty <= 0) return;
 
   const components = await itemRepository.findComponents(itemId);
@@ -428,11 +480,17 @@ async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx) {
         { tx }
       );
 
+      await createReservationMovement({ itemId, unit: parentUnit, actorId, requestId }, tx);
+
       for (const childUnit of parentUnit.childUnits) {
         await requestRepository.updateInventoryUnit(childUnit.id, { status: 'RESERVED' }, { tx });
         await requestRepository.createRequestItemUnit(
           { requestItemId, inventoryUnitId: childUnit.id },
           { tx }
+        );
+        await createReservationMovement(
+          { itemId: childUnit.itemId, unit: childUnit, actorId, requestId },
+          tx
         );
       }
     }
@@ -456,7 +514,27 @@ async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx) {
       { requestItemId, inventoryUnitId: unit.id },
       { tx }
     );
+    await createReservationMovement({ itemId, unit, actorId, requestId }, tx);
   }
+}
+
+/**
+ * RN-MOV-01: crear una solicitud deja un movimiento de reserva por unidad reservada, con
+ * el actor que la creó y la solicitud asociada.
+ */
+async function createReservationMovement({ itemId, unit, actorId, requestId }, tx) {
+  if (!requestId) return;
+  await requestRepository.createMovement(
+    {
+      type: 'RESERVATION',
+      itemId,
+      inventoryUnitId: unit.id,
+      quantity: 1,
+      responsibleId: actorId ?? null,
+      requestId,
+    },
+    { tx }
+  );
 }
 
 /**

@@ -34,6 +34,15 @@ export const itemController = {
     successResponse(res, result, 'Ítem actualizado correctamente');
   }),
 
+  adjustStock: asyncHandler(async (req, res) => {
+    const result = await itemService.adjustConsumableStock(
+      Number(req.params.id),
+      req.body.stock,
+      req.user.userId
+    );
+    successResponse(res, result, 'Stock del consumible ajustado');
+  }),
+
   remove: asyncHandler(async (req, res) => {
     const result = await itemService.deleteItem(Number(req.params.id));
     successResponse(res, result, result.message);

@@ -47,6 +47,10 @@ export const updateItemSchema = z.object({
   components: z.array(componentSchema).optional(),
 });
 
+export const adjustStockSchema = z.object({
+  stock: z.number().int().nonnegative('El stock no puede ser negativo'),
+});
+
 export const itemIdParamSchema = z.object({
   id: z.coerce.number().int().positive('ID inválido'),
 });
