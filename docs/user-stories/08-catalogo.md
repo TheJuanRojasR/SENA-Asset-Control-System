@@ -12,7 +12,7 @@ Lo usan **ambos actores**, con papeles distintos: el instructor consulta, busca,
 
 Este módulo es dueño de **qué muestra el catálogo** y de **cómo se calcula la disponibilidad para un rango**. La reserva y su ciclo de vida son del epic 06; los estados físicos de la unidad, del epic 05; la alerta de stock bajo es `RN-INV-44` y su panel, del epic 12.
 
-Estado: **especificado y no ejecutado**. Cuatro historias, 22 criterios, ninguno `OK` ni `GAP` hoy.
+Estado: **en ejecución**. Cuatro historias y 22 criterios; **21 ya ejecutados y en `OK`** en la rama `devJoseph-catalogo` con test `AC-CAT-*` en `server/tests/integration/catalog.test.js`. Resta `AC-CAT-03-8` (trámite de baja y piezas) en el siguiente encadenado.
 
 ## Alcance
 
@@ -487,32 +487,32 @@ Sin decisión todavía: la validación de un rango mal formado y el efecto de su
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **especificado y no ejecutado**: los **22** criterios están sin estado y ninguno es `OK`, `GAP` ni `FALTA` hoy.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución**: 21 de los 22 criterios corren con test y quedaron en `OK`; `AC-CAT-03-8` sigue sin ejecutar hasta el siguiente encadenado. La verificación implementó el catálogo completo (motor de disponibilidad por rango) y corrigió una conversión de `categoryId` que rompía los filtros.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-CAT-01-1` | `RN-CAT-01` | Sin ejecutar |
-| `AC-CAT-01-2` | `RN-CAT-03` | Sin ejecutar |
-| `AC-CAT-01-3` | `RN-INV-12` | Sin ejecutar |
-| `AC-CAT-01-4` | `RN-CAT-05` | Sin ejecutar |
-| `AC-CAT-01-5` | `RN-CTX-05` | Sin ejecutar |
-| `AC-CAT-01-6` | `RN-CAT-04` | Sin ejecutar |
-| `AC-CAT-02-1` | `RN-CAT-02` | Sin ejecutar |
-| `AC-CAT-02-2` | `Estándar` | Sin ejecutar |
-| `AC-CAT-02-3` | `RN-CAT-02` | Sin ejecutar |
-| `AC-CAT-02-4` | `Estándar` | Sin ejecutar |
-| `AC-CAT-03-1` | `RN-CAT-03`, `RN-NEG-04` | Sin ejecutar |
-| `AC-CAT-03-2` | `RN-NEG-02` | Sin ejecutar |
-| `AC-CAT-03-3` | `RN-NEG-01` | Sin ejecutar |
-| `AC-CAT-03-4` | `RN-INV-31` | Sin ejecutar |
-| `AC-CAT-03-5` | `RN-INV-08` | Sin ejecutar |
-| `AC-CAT-03-6` | `Estándar` | Sin ejecutar |
-| `AC-CAT-03-7` | `RN-NEG-05`, `RN-SOL-11` | Sin ejecutar |
+| `AC-CAT-01-1` | `RN-CAT-01` | `OK` |
+| `AC-CAT-01-2` | `RN-CAT-03` | `OK` |
+| `AC-CAT-01-3` | `RN-INV-12` | `OK` |
+| `AC-CAT-01-4` | `RN-CAT-05` | `OK` |
+| `AC-CAT-01-5` | `RN-CTX-05` | `OK` |
+| `AC-CAT-01-6` | `RN-CAT-04` | `OK` |
+| `AC-CAT-02-1` | `RN-CAT-02` | `OK` |
+| `AC-CAT-02-2` | `Estándar` | `OK` |
+| `AC-CAT-02-3` | `RN-CAT-02` | `OK` |
+| `AC-CAT-02-4` | `Estándar` | `OK` |
+| `AC-CAT-03-1` | `RN-CAT-03`, `RN-NEG-04` | `OK` |
+| `AC-CAT-03-2` | `RN-NEG-02` | `OK` |
+| `AC-CAT-03-3` | `RN-NEG-01` | `OK` |
+| `AC-CAT-03-4` | `RN-INV-31` | `OK` |
+| `AC-CAT-03-5` | `RN-INV-08` | `OK` |
+| `AC-CAT-03-6` | `Estándar` | `OK` |
+| `AC-CAT-03-7` | `RN-NEG-05`, `RN-SOL-11` | `OK` |
 | `AC-CAT-03-8` | `RN-INV-33` | Sin ejecutar |
-| `AC-CAT-03-10` | `RN-INV-11` | Sin ejecutar |
-| `AC-CAT-03-11` | `RN-PRE-15` | Sin ejecutar |
-| `AC-CAT-04-1` | `RN-CTX-02` | Sin ejecutar |
-| `AC-CAT-04-2` | `Estándar` | Sin ejecutar |
+| `AC-CAT-03-10` | `RN-INV-11` | `OK` |
+| `AC-CAT-03-11` | `RN-PRE-15` | `OK` |
+| `AC-CAT-04-1` | `RN-CTX-02` | `OK` |
+| `AC-CAT-04-2` | `Estándar` | `OK` |
 
 | US | ACs | Regla de negocio | `Estándar` |
 |----|-----|------------------|------------|
@@ -522,7 +522,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-CAT-04` | 2 | 1 | 1 |
 | **Total** | **22** | **18** | **4** |
 
-Totales: **4 historias y 22 criterios**, todos sin ejecutar. **18** se apoyan en una regla de negocio confirmada y **4** en un invariante técnico (`Estándar`: AC-CAT-02-2, AC-CAT-02-4, AC-CAT-03-6 y AC-CAT-04-2). Las citas de regla suman **20** sobre los 18 criterios que se apoyan en al menos una: AC-CAT-03-1 y AC-CAT-03-7 citan dos reglas cada uno. `RN-INV-15` está `REFUTADA` y no es origen de ningún criterio.
+Totales: **4 historias y 22 criterios**, **21 `OK` y 1 sin ejecutar** (`AC-CAT-03-8`, trámite de baja y piezas). **18** se apoyan en una regla de negocio confirmada y **4** en un invariante técnico (`Estándar`: AC-CAT-02-2, AC-CAT-02-4, AC-CAT-03-6 y AC-CAT-04-2). Las citas de regla suman **20** sobre los 18 criterios que se apoyan en al menos una: AC-CAT-03-1 y AC-CAT-03-7 citan dos reglas cada uno. `RN-INV-15` está `REFUTADA` y no es origen de ningún criterio.
 
 La numeración de `AC-CAT-03` salta un número: el criterio que describía el efecto de un préstamo informal se retiró porque ese préstamo no existe (`RN-INV-15`, `REFUTADA`), y los ids no se renumeran.
 
