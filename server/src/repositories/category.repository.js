@@ -9,12 +9,18 @@ const defaultSelect = {
 };
 
 export const categoryRepository = {
-  async findManyActive(search) {
+  async findManyActive(search, { page = 1, limit = 100 } = {}) {
     return prisma.category.findMany({
       where: buildWhere({ search }),
       select: defaultSelect,
+      skip: (page - 1) * limit,
+      take: limit,
       orderBy: { name: 'asc' },
     });
+  },
+
+  async countActive(search) {
+    return prisma.category.count({ where: buildWhere({ search }) });
   },
 
   async findById(id) {

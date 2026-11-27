@@ -16,4 +16,9 @@ export const categoryIdParamSchema = z.object({
 
 export const listCategoriesQuerySchema = z.object({
   search: z.string().optional(),
+  // RN-CTX-02 / AC-CATEG-02-5: todo listado es paginado con su total. El tamaño de página
+  // no lo fija la especificación; se usa 100 por defecto para no romper la carga del
+  // catálogo completo que hace el cliente, con límite máximo de 100.
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(100),
 });

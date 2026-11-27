@@ -3,9 +3,21 @@ import { AppError } from '../utils/AppError.js';
 import { HTTP_STATUS } from '../constants/httpStatus.js';
 
 export const categoryService = {
-  async listCategories(search) {
-    const categories = await categoryRepository.findManyActive(search);
-    return { data: categories };
+  async listCategories(filters, pagination) {
+    const [categories, total] = await Promise.all([
+      categoryRepository.findManyActive(filters.search, pagination),
+      categoryRepository.countActive(filters.search),
+    ]);
+
+    return {
+      data: categories,
+      meta: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages: Math.ceil(total / pagination.limit),
+      },
+    };
   },
 
   async getCategoryById(id) {

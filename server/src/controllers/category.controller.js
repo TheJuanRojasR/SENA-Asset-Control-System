@@ -5,7 +5,13 @@ import { HTTP_STATUS } from '../constants/httpStatus.js';
 
 export const categoryController = {
   list: asyncHandler(async (req, res) => {
-    const result = await categoryService.listCategories(req.query.search);
+    // Los query params llegan como texto; se normalizan para Prisma (AC-CATEG-02-5).
+    const filters = { search: req.query.search };
+    const pagination = {
+      page: Number(req.query.page) || 1,
+      limit: Number(req.query.limit) || 100,
+    };
+    const result = await categoryService.listCategories(filters, pagination);
     successResponse(res, result);
   }),
 
