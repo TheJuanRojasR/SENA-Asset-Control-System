@@ -8,7 +8,7 @@ Este módulo resuelve el **catálogo de ambientes de destino**: registrar un amb
 
 El ambiente **no es un segundo almacén**: el inventario es uno solo (`RN-CTX-03`) y el catálogo existe por **trazabilidad de destino** (`RN-CTX-04`), para que el sistema pueda decir dónde está un equipo que se quedó más de un mes en otro ambiente (`RN-CTX-07`). Lo escribe el administrador; el instructor lo consulta (`RN-CTX-05`).
 
-Si el módulo falla, el administrador no puede nombrar el destino donde quedó un equipo, no puede saber qué se fue a cada ambiente, o borra un ambiente y deja unidades con una ubicación ilegible. Estado hoy: **4 historias y 10 criterios especificados y sin ejecutar**; ningún criterio es `OK` ni `GAP`, porque todavía no hay test que los corra.
+Si el módulo falla, el administrador no puede nombrar el destino donde quedó un equipo, no puede saber qué se fue a cada ambiente, o borra un ambiente y deja unidades con una ubicación ilegible. Estado hoy: **4 historias y 10 criterios ejecutados y en `OK`** en la rama `devJoseph-ambientes`: cada criterio tiene test con su id en `server/tests/integration/environment.test.js` y la suite pasa. La revisión independiente de quien implementó queda pendiente en el PR.
 
 > **Frontera con el epic 05.** La **ubicación de una unidad** —que toda unidad tenga una, que el administrador pueda cambiarla y consultarla, y qué unidades hay en un ambiente— es `US-INV-11` del epic 05. Este epic especifica **solo el catálogo de ambientes** sobre el que esa ubicación se apoya: ningún criterio de `US-INV-11` se repite acá.
 
@@ -276,22 +276,22 @@ Sin decisión todavía: los campos del ambiente distintos del nombre, las valida
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **especificado y no ejecutado**: los 10 criterios están sin estado y ninguno es `OK`, `GAP` ni `FALTA` hoy.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó en la rama `devJoseph-ambientes` con `server/tests/integration/environment.test.js`: los 10 criterios tienen test con su id y pasan. La verificación encontró 5 `GAP` reales (nombre en blanco, conteo por ambiente, paginación, protección del ambiente base y unicidad del nombre) que se corrigieron en el mismo encadenado.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-AMB-01-1` | `RN-CTX-04` | Sin ejecutar |
-| `AC-AMB-01-2` | `Estándar` | Sin ejecutar |
-| `AC-AMB-01-3` | `RN-CTX-05` | Sin ejecutar |
-| `AC-AMB-02-1` | `RN-CTX-04` | Sin ejecutar |
-| `AC-AMB-02-2` | `RN-CTX-10` | Sin ejecutar |
-| `AC-AMB-02-3` | `RN-CTX-02` | Sin ejecutar |
-| `AC-AMB-03-1` | `RN-CTX-09` | Sin ejecutar |
-| `AC-AMB-03-2` | `RN-CTX-09` | Sin ejecutar |
-| `AC-AMB-04-1` | `RN-CTX-11` | Sin ejecutar |
-| `AC-AMB-04-2` | `RN-CTX-11` | Sin ejecutar |
+| `AC-AMB-01-1` | `RN-CTX-04` | `OK` |
+| `AC-AMB-01-2` | `Estándar` | `OK` |
+| `AC-AMB-01-3` | `RN-CTX-05` | `OK` |
+| `AC-AMB-02-1` | `RN-CTX-04` | `OK` |
+| `AC-AMB-02-2` | `RN-CTX-10` | `OK` |
+| `AC-AMB-02-3` | `RN-CTX-02` | `OK` |
+| `AC-AMB-03-1` | `RN-CTX-09` | `OK` |
+| `AC-AMB-03-2` | `RN-CTX-09` | `OK` |
+| `AC-AMB-04-1` | `RN-CTX-11` | `OK` |
+| `AC-AMB-04-2` | `RN-CTX-11` | `OK` |
 
-Totales: **4 historias y 10 criterios**, todos sin ejecutar. **9** se apoyan en una regla de negocio confirmada y **1** en un invariante técnico (`Estándar`: `AC-AMB-01-2`). Ninguno está en `OPEN` ni es `Derivada`: las reglas de §1 y §2 responden todo lo que este epic necesita.
+Totales: **4 historias y 10 criterios**, **10 `OK`** (verificación ejecutada en Linux; la revisión independiente del código queda pendiente). **9** se apoyan en una regla de negocio confirmada y **1** en un invariante técnico (`Estándar`: `AC-AMB-01-2`). Ninguno está en `OPEN` ni es `Derivada`: las reglas de §1 y §2 responden todo lo que este epic necesita.
 
 ## Anexo — Datos de prueba
 
