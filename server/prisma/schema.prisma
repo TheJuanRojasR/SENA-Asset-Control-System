@@ -90,6 +90,9 @@ enum DamageTaskStatus {
 enum NotificationType {
   REQUEST_APPROVED
   REQUEST_REJECTED
+  // RN-NOT-01 / AC-SOL-09-5: avisos de cancelación manual y de vencimiento.
+  REQUEST_CANCELLED
+  REQUEST_EXPIRED
   // RN-NOT-01 / AC-SOL-05-6: aviso de "listo para retirar" al empacar.
   PICKUP_READY
   STOCK_LOW

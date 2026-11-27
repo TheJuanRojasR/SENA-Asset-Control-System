@@ -1,6 +1,7 @@
 import { prisma } from '../config/database.js';
 import { requestRepository } from '../repositories/request.repository.js';
 import { notificationRepository } from '../repositories/notification.repository.js';
+import { notificationChannelService } from './notificationChannel.service.js';
 import { itemRepository } from '../repositories/item.repository.js';
 import { environmentRepository } from '../repositories/environment.repository.js';
 import { AppError } from '../utils/AppError.js';
@@ -349,7 +350,7 @@ export const requestService = {
       );
 
       // RN-NOT-01: aviso de aprobación (no es el aviso de "listo para retirar").
-      await notificationRepository.create(
+      const approvalNotice = await notificationRepository.create(
         {
           userId: request.requesterId,
           requestId: id,
@@ -359,6 +360,10 @@ export const requestService = {
         },
         { tx }
       );
+      await notificationChannelService.sendNotice({
+        notification: approvalNotice,
+        recipient: request.requester,
+      });
 
       return { request: await requestRepository.findById(id, { tx }) };
     });
@@ -388,6 +393,22 @@ export const requestService = {
         },
         { tx }
       );
+
+      // RN-NOT-01 / AC-SOL-09-5: el rechazo deja aviso con su motivo.
+      const rejectionNotice = await notificationRepository.create(
+        {
+          userId: request.requesterId,
+          requestId: id,
+          type: 'REQUEST_REJECTED',
+          title: 'Solicitud rechazada',
+          message: `Tu solicitud ${request.code} fue rechazada: ${rejectionReason}`,
+        },
+        { tx }
+      );
+      await notificationChannelService.sendNotice({
+        notification: rejectionNotice,
+        recipient: request.requester,
+      });
 
       return { request: updated };
     });
@@ -524,7 +545,7 @@ export const requestService = {
       );
 
       // RN-NOT-01 / AC-SOL-05-6: exactamente un aviso de "listo para retirar".
-      await notificationRepository.create(
+      const pickupNotice = await notificationRepository.create(
         {
           userId: request.requesterId,
           requestId: id,
@@ -534,6 +555,10 @@ export const requestService = {
         },
         { tx }
       );
+      await notificationChannelService.sendNotice({
+        notification: pickupNotice,
+        recipient: request.requester,
+      });
 
       return { request: await requestRepository.findById(id, { tx }) };
     });
@@ -823,6 +848,22 @@ export const requestService = {
         { status: 'CANCELLED', cancellationCause: 'MANUAL' },
         { tx }
       );
+
+      // RN-NOT-01 / AC-SOL-09-5: la cancelación manual deja aviso al instructor.
+      const cancelNotice = await notificationRepository.create(
+        {
+          userId: request.requesterId,
+          requestId: id,
+          type: 'REQUEST_CANCELLED',
+          title: 'Solicitud cancelada',
+          message: `Tu solicitud ${request.code} fue cancelada por el administrador.`,
+        },
+        { tx }
+      );
+      await notificationChannelService.sendNotice({
+        notification: cancelNotice,
+        recipient: request.requester,
+      });
 
       return { request: await requestRepository.findById(id, { tx }) };
     });
