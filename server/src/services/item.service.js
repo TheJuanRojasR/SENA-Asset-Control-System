@@ -158,41 +158,28 @@ export const itemService = {
     };
   },
 
+  /**
+   * RN-INV-45 / US-ITE-06: dar de baja un elemento no lo elimina. Se rechaza si alguna
+   * unidad está comprometida (prestada o reservada) y se acepta si no hay ninguna; las
+   * unidades dadas de baja o declaradas perdidas no bloquean (RN-PRE-15).
+   */
   async deleteItem(id) {
-    const item = await itemRepository.findById(id, { includeDeleted: true });
+    const item = await itemRepository.findById(id);
     if (!item) {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
     }
 
-    if (item.isDeleted || !item.isActive) {
-      await itemRepository.restore(id);
-      return { message: 'Ítem activado correctamente' };
-    }
-
-    const loanedCount = await itemRepository.countLoanedUnits(id);
-    if (loanedCount > 0) {
+    const committed = await itemRepository.countCommittedUnits(id);
+    if (committed > 0) {
       throw new AppError(
-        'No se puede eliminar el ítem porque tiene unidades en préstamo',
+        'No se puede dar de baja el ítem porque tiene unidades comprometidas',
         HTTP_STATUS.CONFLICT,
-        'ITEM_HAS_LOANS'
+        'ITEM_HAS_COMMITTED_UNITS'
       );
     }
 
-    await itemRepository.softDelete(id);
-    return { message: 'Ítem desactivado correctamente' };
-  },
-
-  async hardDeleteItem(id) {
-    const item = await itemRepository.findById(id, { includeDeleted: true });
-    if (!item) throw new AppError('Item no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
-
-    const loanedCount = await itemRepository.countLoanedUnits(id);
-    if (loanedCount > 0) {
-      throw new AppError( 'No se puede eliminar el item porque tiene unidades en préstamo', HTTP_STATUS.CONFLICT, 'ITEM_HAS_LOANS' );
-    }
-
-    await itemRepository.hardDelete(id);
-    return { message: 'Item eliminado permanentemente' };
+    await itemRepository.deactivate(id);
+    return { message: 'Ítem dado de baja correctamente' };
   },
 
 };

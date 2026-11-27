@@ -163,9 +163,26 @@ export const itemRepository = {
     ])
   },
 
-  async countLoanedUnits(id) {
+  /**
+   * RN-INV-45: una unidad está comprometida si está prestada o reservada. Una unidad
+   * dada de baja o declarada perdida (DISPOSED) sale del inventario activo y no bloquea;
+   * RN-PRE-15 lo fija para la pérdida.
+   */
+  async countCommittedUnits(id) {
     return prisma.inventoryUnit.count({
-      where: { itemId: id, status: 'LOANED' },
+      where: { itemId: id, status: { in: ['LOANED', 'RESERVED'] } },
+    });
+  },
+
+  /**
+   * RN-INV-45: la baja es un estado, no un borrado. El elemento sigue en el catálogo y
+   * consultable; deja de ofrecerse para solicitudes nuevas.
+   */
+  async deactivate(id) {
+    return prisma.item.update({
+      where: { id },
+      data: { isActive: false },
+      select: defaultSelect,
     });
   },
 

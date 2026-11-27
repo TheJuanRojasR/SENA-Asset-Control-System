@@ -34,6 +34,16 @@ export const requestService = {
           throw new AppError(`Ítem no encontrado: ${itemId}`, HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
         }
 
+        // AC-ITE-06-1 / RN-INV-45: un elemento dado de baja deja de ofrecerse para
+        // solicitudes nuevas, aunque conserve unidades físicas en inventario.
+        if (!item.isActive) {
+          throw new AppError(
+            `Ítem no disponible: ${item.name}`,
+            HTTP_STATUS.CONFLICT,
+            'ITEM_NOT_AVAILABLE'
+          );
+        }
+
         const available = await requestRepository.countAvailableUnitsByItemId(itemId, { tx });
         if (available < requestedQty) {
           throw new AppError(
