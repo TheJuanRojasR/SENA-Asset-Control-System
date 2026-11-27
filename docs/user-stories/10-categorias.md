@@ -8,7 +8,7 @@ Este módulo resuelve el **catálogo de categorías**: registrar una categoría 
 
 La categoría es el **cimiento de dos historias ya especificadas**: `US-ITE-01` del epic 04 exige la categoría en el alta de un elemento y rechaza una inexistente, y `US-CAT-02` del epic 08 ofrece filtrar el catálogo por categoría. La **escribe el administrador**; el instructor **solo la consulta para filtrar** (`RN-CATEG-01`).
 
-Si el módulo falla, no se puede clasificar ningún elemento, el filtro del catálogo no tiene valores que ofrecer, o se borra una categoría en uso y deja elementos sin la agrupación que los clasifica. Estado hoy: **3 historias y 10 criterios especificados y sin ejecutar**; ningún criterio es `OK` ni `GAP`, porque todavía no hay test que los corra.
+Si el módulo falla, no se puede clasificar ningún elemento, el filtro del catálogo no tiene valores que ofrecer, o se borra una categoría en uso y deja elementos sin la agrupación que los clasifica. Estado hoy: **3 historias y 10 criterios ejecutados y en `OK`** en la rama `devJoseph-categorias`: cada criterio tiene test con su id en `server/tests/integration/category.test.js` y la suite pasa. La revisión independiente de quien implementó queda pendiente en el PR.
 
 > **Frontera con los epics 04 y 08.** Asignar la categoría a un elemento es `US-ITE-01` (epic 04) y el filtro por categoría es `US-CAT-02` (epic 08). Este epic especifica **solo el catálogo de categorías** sobre el que esas dos historias se apoyan: ningún criterio de ellas se repite acá.
 
@@ -300,20 +300,20 @@ Sin decisión todavía: los campos de la categoría distintos del nombre, la com
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **especificado y no ejecutado**: los 10 criterios están sin estado y ninguno es `OK`, `GAP` ni `FALTA` hoy.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó en la rama `devJoseph-categorias` con `server/tests/integration/category.test.js`: los 10 criterios tienen test con su id y pasan. `AC-CATEG-02-5` encontró un `GAP` real (el listado no era paginado) que se corrigió en el mismo encadenado.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-CATEG-01-1` | `RN-CATEG-01`, `RN-CATEG-02` | Sin ejecutar |
-| `AC-CATEG-01-2` | `RN-CATEG-02` | Sin ejecutar |
-| `AC-CATEG-01-3` | `RN-CATEG-01` | Sin ejecutar |
-| `AC-CATEG-02-1` | `RN-CATEG-01` | Sin ejecutar |
-| `AC-CATEG-02-2` | `RN-CATEG-02` | Sin ejecutar |
-| `AC-CATEG-02-3` | `RN-CATEG-01` | Sin ejecutar |
-| `AC-CATEG-02-4` | `RN-CATEG-02` | Sin ejecutar |
-| `AC-CATEG-02-5` | `RN-CTX-02` | Sin ejecutar |
-| `AC-CATEG-03-1` | `RN-CATEG-03` | Sin ejecutar |
-| `AC-CATEG-03-2` | `RN-CATEG-03` | Sin ejecutar |
+| `AC-CATEG-01-1` | `RN-CATEG-01`, `RN-CATEG-02` | `OK` |
+| `AC-CATEG-01-2` | `RN-CATEG-02` | `OK` |
+| `AC-CATEG-01-3` | `RN-CATEG-01` | `OK` |
+| `AC-CATEG-02-1` | `RN-CATEG-01` | `OK` |
+| `AC-CATEG-02-2` | `RN-CATEG-02` | `OK` |
+| `AC-CATEG-02-3` | `RN-CATEG-01` | `OK` |
+| `AC-CATEG-02-4` | `RN-CATEG-02` | `OK` |
+| `AC-CATEG-02-5` | `RN-CTX-02` | `OK` |
+| `AC-CATEG-03-1` | `RN-CATEG-03` | `OK` |
+| `AC-CATEG-03-2` | `RN-CATEG-03` | `OK` |
 
 | US | ACs | Implementables (`RN`) | `Estándar` | `Derivada` | `OPEN` |
 |----|-----|-----------------------|------------|------------|--------|
@@ -322,7 +322,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-CATEG-03` | 2 | 2 | 0 | 0 | 0 |
 | **Total** | **10** | **10** | **0** | **0** | **0** |
 
-Totales: **3 historias y 10 criterios**, todos sin ejecutar. Los 10 se apoyan en una regla de negocio confirmada: `RN-CATEG-01` ×4, `RN-CATEG-02` ×4, `RN-CATEG-03` ×2 y `RN-CTX-02` ×1 — **11 citas** para **10 criterios**, porque `AC-CATEG-01-1` cita dos reglas. Ninguno es `Derivada` ni `OPEN`.
+Totales: **3 historias y 10 criterios**, **10 `OK`** (verificación ejecutada en Linux; la revisión independiente del código queda pendiente). Los 10 se apoyan en una regla de negocio confirmada: `RN-CATEG-01` ×4, `RN-CATEG-02` ×4, `RN-CATEG-03` ×2 y `RN-CTX-02` ×1 — **11 citas** para **10 criterios**, porque `AC-CATEG-01-1` cita dos reglas. Ninguno es `Derivada` ni `OPEN`.
 
 ## Anexo — Datos de prueba
 
