@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import inventoryRoutes from '../../src/routes/inventory.routes.js';
 import requestRoutes from '../../src/routes/request.routes.js';
 import itemRoutes from '../../src/routes/item.routes.js';
+import catalogRoutes from '../../src/routes/catalog.routes.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { generateTokens } from '../../src/utils/jwt.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
@@ -14,6 +15,7 @@ function buildApp() {
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/requests', requestRoutes);
   app.use('/api/items', itemRoutes);
+  app.use('/api/catalog', catalogRoutes);
   app.use(errorHandler);
   return app;
 }
@@ -320,12 +322,14 @@ describe('Inventory endpoints', () => {
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
           physicalState: 'OPERATIVO',
+          ownership: 'DONATED',
         },
       });
 
       const response = await request(app)
         .delete(`/api/inventory/${unit.id}`)
-        .set('Authorization', authHeader(admin));
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Baja directa de donada' });
 
       expect(response.status).toBe(200);
       expect(response.body.data.unit.status).toBe('DISPOSED');
@@ -412,7 +416,8 @@ describe('Inventory endpoints', () => {
 
       const response = await request(app)
         .delete(`/api/inventory/${unit.id}`)
-        .set('Authorization', authHeader(admin));
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Intento repetido' });
 
       expect(response.status).toBe(409);
       expect(response.body.success).toBe(false);
@@ -1435,6 +1440,315 @@ describe('Inventory endpoints', () => {
       expect(response.status).toBe(200);
       expect(response.body.data.data).toHaveLength(20);
       expect(response.body.data.meta.total).toBeGreaterThanOrEqual(25);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-08 — Dar de baja una unidad según su tenencia (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-08 — Baja según tenencia', () => {
+    const createItemRecord = (code, name) =>
+      prismaTest.item.create({ data: { code, name, categoryId: category.id } });
+    const createUnitViaApi = (payload) =>
+      request(app).post('/api/inventory').set('Authorization', authHeader(admin)).send(payload);
+    const getUnit = (unitId) =>
+      request(app).get(`/api/inventory/${unitId}`).set('Authorization', authHeader(admin));
+    const disposeUnit = (unitId, reason) =>
+      request(app)
+        .delete(`/api/inventory/${unitId}`)
+        .set('Authorization', authHeader(admin))
+        .send(reason ? { reason } : {});
+    const catalog = (params = {}) =>
+      request(app).get('/api/catalog').query(params).set('Authorization', authHeader(admin));
+
+    it('AC-INV-08-1 — La baja de una unidad donada averiada se acepta', async () => {
+      const target = await createItemRecord('BAJA-1', 'Equipo donado averiado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-DON-001',
+        ownership: 'DONATED',
+        physicalState: 'AVERIADO',
+      });
+      expect(created.status).toBe(201);
+      const unitId = created.body.data.unit.id;
+
+      const response = await disposeUnit(unitId, 'Avería irreparable');
+      expect(response.status).toBe(200);
+
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.status).toBe('DISPOSED');
+      expect(stored.body.data.unit.physicalState).toBe('DADO_DE_BAJA');
+    });
+
+    it('AC-INV-08-2 — Una unidad dada de baja no puede usarse', async () => {
+      const target = await createItemRecord('BAJA-2', 'Equipo dado de baja');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-USO-001',
+        ownership: 'DONATED',
+      });
+      const unitId = created.body.data.unit.id;
+      await disposeUnit(unitId, 'Baja para prueba');
+
+      // No se puede asignar a una solicitud.
+      const requestResponse = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: target.id, requestedQty: 1 }] });
+      expect(requestResponse.status).toBe(409);
+      expect(await prismaTest.requestItemUnit.count({ where: { inventoryUnitId: unitId } })).toBe(
+        0
+      );
+
+      // No se puede ensamblar dentro de un compuesto.
+      const compound = await createItemRecord('BAJA-CMP', 'Compuesto');
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: compound.id, childItemId: target.id, isRequired: true },
+      });
+      const parentUnit = await createUnitViaApi({
+        itemId: compound.id,
+        serialNumber: 'BAJA-CMP-001',
+        ownership: 'SENA',
+      });
+      const assembled = await request(app)
+        .post(`/api/inventory/${parentUnit.body.data.unit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [unitId] });
+      expect(assembled.status).toBe(409);
+      const after = await getUnit(unitId);
+      expect(after.body.data.unit.parentUnitId).toBeNull();
+    });
+
+    it('AC-INV-08-3 — La baja no borra el registro', async () => {
+      const target = await createItemRecord('BAJA-3', 'Registro conservado');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-REG-001',
+        ownership: 'DONATED',
+      });
+      const unitId = created.body.data.unit.id;
+      await disposeUnit(unitId, 'Motivo de baja');
+
+      const response = await getUnit(unitId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.unit.serialNumber).toBe('BAJA-REG-001');
+      expect(response.body.data.unit.status).toBe('DISPOSED');
+
+      const availability = await catalog({ from: '2026-12-01', to: '2026-12-02' });
+      const row = availability.body.data.data.find((entry) => entry.id === target.id);
+      expect(row.availableQty).toBe(0);
+    });
+
+    it('AC-INV-08-4 — La baja exige motivo y deja registrado al actor', async () => {
+      const target = await createItemRecord('BAJA-4', 'Baja con motivo');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-MOT-001',
+        ownership: 'DONATED',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const withoutReason = await disposeUnit(unitId);
+      expect(withoutReason.status).toBe(400);
+      expect((await getUnit(unitId)).body.data.unit.status).toBe('AVAILABLE');
+
+      const withReason = await disposeUnit(unitId, 'Daño por caída');
+      expect(withReason.status).toBe(200);
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.disposalReason).toBe('Daño por caída');
+      expect(stored.body.data.unit.disposalConfirmedById).toBe(admin.id);
+      const movement = await prismaTest.movement.findFirst({
+        where: { inventoryUnitId: unitId, type: 'DISPOSAL' },
+      });
+      expect(movement.responsibleId).toBe(admin.id);
+      expect(movement.notes).toBe('Daño por caída');
+    });
+
+    it('AC-INV-08-5 — La pérdida de una unidad fuera de un préstamo queda registrada', async () => {
+      // Pérdida de una unidad en el depósito.
+      const target = await createItemRecord('BAJA-5', 'Unidad perdida');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-LOSS-001',
+        ownership: 'DONATED',
+      });
+      const unitId = created.body.data.unit.id;
+      const loss = await request(app)
+        .post(`/api/inventory/${unitId}/loss`)
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Desapareció del depósito' });
+      expect(loss.status).toBe(200);
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.declaredLost).toBe(true);
+      const lossMovement = await prismaTest.movement.findFirst({
+        where: { inventoryUnitId: unitId, type: 'DISPOSAL' },
+      });
+      expect(lossMovement.notes).toContain('Desapareció del depósito');
+      expect(lossMovement.responsibleId).toBe(admin.id);
+      const availability = await catalog({ from: '2026-12-01', to: '2026-12-02' });
+      expect(availability.body.data.data.find((row) => row.id === target.id).availableQty).toBe(0);
+
+      // Unidad del SENA con piezas y trámite abierto: sus piezas siguen prestables.
+      const kitItem = await createItemRecord('BAJA-KIT', 'Kit SENA');
+      const pieceItem = await createItemRecord('BAJA-PZA', 'Pieza del kit');
+      await prismaTest.itemComponent.create({
+        data: { parentItemId: kitItem.id, childItemId: pieceItem.id, isRequired: true },
+      });
+      const kitUnit = await createUnitViaApi({
+        itemId: kitItem.id,
+        serialNumber: 'BAJA-KIT-001',
+        ownership: 'SENA',
+      });
+      const pieceUnit = await createUnitViaApi({
+        itemId: pieceItem.id,
+        serialNumber: 'BAJA-PZA-001',
+        ownership: 'SENA',
+      });
+      await request(app)
+        .post(`/api/inventory/${kitUnit.body.data.unit.id}/assemble`)
+        .set('Authorization', authHeader(admin))
+        .send({ childUnitIds: [pieceUnit.body.data.unit.id] });
+      const start = await request(app)
+        .post(`/api/inventory/${kitUnit.body.data.unit.id}/disposal/start`)
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Avería del equipo' });
+      expect(start.status).toBe(200);
+      const lostKit = await request(app)
+        .post(`/api/inventory/${kitUnit.body.data.unit.id}/loss`)
+        .set('Authorization', authHeader(admin))
+        .send({ reason: 'Pérdida durante el trámite' });
+      expect(lostKit.status).toBe(200);
+
+      const pieceRequest = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(instructor))
+        .send({ items: [{ itemId: pieceItem.id, requestedQty: 1 }] });
+      expect(pieceRequest.status).toBe(201);
+      const pieceRequestId = pieceRequest.body.data.request.id;
+      await request(app)
+        .put(`/api/requests/${pieceRequestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${pieceRequestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      const pieceDelivery = await request(app)
+        .put(`/api/requests/${pieceRequestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+      expect(pieceDelivery.status).toBe(200);
+      const kitAfter = await getUnit(kitUnit.body.data.unit.id);
+      expect(kitAfter.body.data.unit.disposalInProgress).toBe(true);
+    });
+
+    it('AC-INV-08-6 — Una unidad del SENA no se da de baja por el camino inmediato', async () => {
+      const target = await createItemRecord('BAJA-6', 'Equipo SENA');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-SENA-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const response = await disposeUnit(unitId, 'Intento inmediato');
+      expect(response.status).toBe(409);
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.status).toBe('AVAILABLE');
+      expect(stored.body.data.unit.ownership).toBe('SENA');
+    });
+
+    it('AC-INV-08-7 — Dos unidades del mismo elemento con tenencia distinta', async () => {
+      const target = await createItemRecord('BAJA-7', 'Elemento mixto');
+      const sena = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-7-SENA',
+        ownership: 'SENA',
+      });
+      const donated = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-7-DON',
+        ownership: 'DONATED',
+      });
+
+      const response = await disposeUnit(donated.body.data.unit.id, 'Baja de donada');
+      expect(response.status).toBe(200);
+      expect((await getUnit(donated.body.data.unit.id)).body.data.unit.status).toBe('DISPOSED');
+      const senaAfter = await getUnit(sena.body.data.unit.id);
+      expect(senaAfter.body.data.unit.status).toBe('AVAILABLE');
+      expect(senaAfter.body.data.unit.ownership).toBe('SENA');
+    });
+
+    it('AC-INV-08-8 — Una unidad del SENA que deja de funcionar no desaparece', async () => {
+      const target = await createItemRecord('BAJA-8', 'Equipo con falla');
+      const created = await createUnitViaApi({
+        itemId: target.id,
+        serialNumber: 'BAJA-8-001',
+        ownership: 'SENA',
+      });
+      const unitId = created.body.data.unit.id;
+
+      const update = await request(app)
+        .put(`/api/inventory/${unitId}`)
+        .set('Authorization', authHeader(admin))
+        .send({ physicalState: 'CON_FALLA' });
+      expect(update.status).toBe(200);
+
+      const stored = await getUnit(unitId);
+      expect(stored.body.data.unit.serialNumber).toBe('BAJA-8-001');
+      expect(stored.body.data.unit.ownership).toBe('SENA');
+      expect(stored.body.data.unit.physicalState).toBe('CON_FALLA');
+
+      const audit = await request(app)
+        .get('/api/inventory')
+        .query({ itemId: target.id })
+        .set('Authorization', authHeader(admin));
+      expect(audit.body.data.data.some((row) => row.id === unitId)).toBe(true);
+
+      const availability = await catalog({ from: '2026-12-01', to: '2026-12-02' });
+      expect(availability.body.data.data.find((row) => row.id === target.id).availableQty).toBe(0);
+    });
+
+    it('AC-INV-08-9 — Un elemento del SENA nunca se informa como consumible', async () => {
+      const senaItem = await createItemRecord('BAJA-9', 'Equipo SENA serializado');
+      await createUnitViaApi({
+        itemId: senaItem.id,
+        serialNumber: 'BAJA-9-001',
+        ownership: 'SENA',
+      });
+
+      const consumables = await request(app)
+        .get('/api/items')
+        .query({ isConsumable: 'true' })
+        .set('Authorization', authHeader(admin));
+      expect(consumables.body.data.data.some((row) => row.id === senaItem.id)).toBe(false);
+
+      const units = await request(app)
+        .get('/api/inventory')
+        .query({ itemId: senaItem.id })
+        .set('Authorization', authHeader(admin));
+      expect(units.body.data.data.some((row) => row.itemId === senaItem.id)).toBe(true);
+
+      const donatedConsumable = await request(app)
+        .post('/api/items')
+        .set('Authorization', authHeader(admin))
+        .send({
+          code: 'BAJA-9-CON',
+          name: 'Consumible donado',
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'LITRO',
+          initialQty: 7,
+        });
+      expect(donatedConsumable.status).toBe(201);
+      const consumablesAfter = await request(app)
+        .get('/api/items')
+        .query({ isConsumable: 'true' })
+        .set('Authorization', authHeader(admin));
+      const row = consumablesAfter.body.data.data.find(
+        (entry) => entry.id === donatedConsumable.body.data.item.id
+      );
+      expect(row).toBeDefined();
+      expect(row.stock).toBe(7);
+      expect(row.unit).toBe('LITRO');
     });
   });
 });
