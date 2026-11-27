@@ -449,7 +449,9 @@ export const inventoryService = {
       const parent = await tx.inventoryUnit.findUnique({
         where: { id: parentUnitId },
         include: {
-          requestItemUnits: { where: { returnedAt: null, lostAt: null } },
+          requestItemUnits: {
+            where: { returnedAt: null, lostAt: null, releasedAt: null },
+          },
           childUnits: { select: { id: true, status: true } },
         },
       });

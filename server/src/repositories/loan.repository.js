@@ -35,6 +35,7 @@ export const loanRepository = {
     const where = {
       loanedAt: { not: null },
       returnedAt: null,
+      releasedAt: null,
       lostAt: null,
     };
     if (requesterId) {
@@ -123,7 +124,7 @@ export const loanRepository = {
       include: {
         item: true,
         assignedUnits: {
-          where: { returnedAt: null, lostAt: null },
+          where: { returnedAt: null, lostAt: null, releasedAt: null },
           include: { inventoryUnit: true },
         },
       },

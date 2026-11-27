@@ -448,7 +448,8 @@ export const requestService = {
         // Unidades ya asignadas a esta línea: para un compuesto es la unidad padre; para un
         // serializado simple es la unidad asignada (puede ser una pieza suelta del conjunto).
         const assignedForItem = requestItem.assignedUnits.filter(
-          (assignment) => assignment.inventoryUnit?.itemId === requestItem.itemId
+          (assignment) =>
+            assignment.inventoryUnit?.itemId === requestItem.itemId && !assignment.releasedAt
         );
         const missing = needed - assignedForItem.length;
         if (missing > 0) {
@@ -627,7 +628,7 @@ export const requestService = {
         }
 
         const pendingAssignments = requestItem.assignedUnits
-          .filter((assignment) => !assignment.loanedAt && !assignment.lostAt)
+          .filter((assignment) => !assignment.loanedAt && !assignment.lostAt && !assignment.releasedAt)
           .slice(0, delta);
 
         if (pendingAssignments.length < delta) {
@@ -766,6 +767,11 @@ export const requestService = {
     });
   },
 
+  /**
+   * RN-SOL-05/06: el instructor cancela solo su solicitud PENDING; el administrador
+   * cancela mientras no se haya registrado la entrega (PENDING/APPROVED/PACKED).
+   * La cancelación libera la reserva y conserva la traza de las unidades asignadas.
+   */
   async cancelRequest(userId, id) {
     return prisma.$transaction(async (tx) => {
       const request = await requestRepository.findById(id, { tx });
@@ -778,11 +784,22 @@ export const requestService = {
         throw new AppError('Usuario no encontrado', HTTP_STATUS.NOT_FOUND, 'USER_NOT_FOUND');
       }
 
-      if (user.role !== 'ADMIN' && request.requesterId !== userId) {
-        throw new AppError('No tiene permisos para cancelar esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
-      }
-
-      if (!['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {
+      if (user.role !== 'ADMIN') {
+        if (request.requesterId !== userId) {
+          throw new AppError(
+            'No tiene permisos para cancelar esta solicitud',
+            HTTP_STATUS.FORBIDDEN,
+            'FORBIDDEN'
+          );
+        }
+        if (request.status !== 'PENDING') {
+          throw new AppError(
+            'El instructor solo puede cancelar solicitudes pendientes',
+            HTTP_STATUS.FORBIDDEN,
+            'FORBIDDEN'
+          );
+        }
+      } else if (!['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {
         throw new AppError(
           `No se puede cancelar una solicitud con estado '${request.status}'`,
           HTTP_STATUS.CONFLICT,
@@ -790,20 +807,27 @@ export const requestService = {
         );
       }
 
-      // Liberar unidades reservadas en cualquier estado cancelable.
+      // La entrega es el límite: una solicitud entregada o parcialmente entregada no se cancela.
+      if (['DELIVERED', 'PARTIALLY_DELIVERED', 'COMPLETED'].includes(request.status)) {
+        throw new AppError(
+          `No se puede cancelar una solicitud con estado '${request.status}'`,
+          HTTP_STATUS.CONFLICT,
+          'INVALID_STATUS'
+        );
+      }
+
       await releaseAssignedUnits(id, tx);
 
-      const updated = await requestRepository.update(
+      await requestRepository.update(
         id,
-        {
-          status: 'CANCELLED',
-        },
+        { status: 'CANCELLED', cancellationCause: 'MANUAL' },
         { tx }
       );
 
-      return { request: updated };
+      return { request: await requestRepository.findById(id, { tx }) };
     });
   },
+
 };
 
 /**
@@ -895,16 +919,23 @@ async function reserveUnit(unit, requestItemId, { tx, actorId, requestId, itemId
  * Libera las asignaciones de una solicitud. Una unidad vuelve a AVAILABLE solo si no le
  * quedan otras reservas activas (RN-NEG-01: puede estar reservada en otro rango).
  */
+/**
+ * Libera las asignaciones de una solicitud conservando la traza (RN-SOL-08 / RN-PRE-02):
+ * las filas se marcan `releasedAt` y NO se borran, para que la consulta de la solicitud
+ * cancelada siga informando qué seriales estuvieron asignados. Una unidad vuelve a
+ * AVAILABLE solo si no le quedan otras reservas activas.
+ */
 async function releaseAssignedUnits(requestId, tx) {
   const requestItems = await requestRepository.findRequestItemsByRequestId(requestId, { tx });
   const assignedUnits = requestItems.flatMap((item) => item.assignedUnits);
+  const active = assignedUnits.filter((assignment) => !assignment.releasedAt);
 
-  if (assignedUnits.length === 0) return;
+  if (active.length === 0) return;
 
-  const unitIds = assignedUnits.map((assignment) => assignment.inventoryUnitId);
-
-  await tx.requestItemUnit.deleteMany({
-    where: { id: { in: assignedUnits.map((assignment) => assignment.id) } },
+  const unitIds = active.map((assignment) => assignment.inventoryUnitId);
+  await tx.requestItemUnit.updateMany({
+    where: { id: { in: active.map((assignment) => assignment.id) } },
+    data: { releasedAt: new Date() },
   });
 
   const remaining = await tx.requestItemUnit.findMany({
@@ -912,6 +943,7 @@ async function releaseAssignedUnits(requestId, tx) {
       inventoryUnitId: { in: unitIds },
       returnedAt: null,
       lostAt: null,
+      releasedAt: null,
     },
     select: { inventoryUnitId: true },
   });
@@ -926,11 +958,6 @@ async function releaseAssignedUnits(requestId, tx) {
   }
 }
 
-/**
- * Cuenta las unidades padre asignadas a un ítem de solicitud.
- * En ítems compuestos los hijos también quedan asignados; solo las unidades
- * del propio ítem cuentan para la cantidad solicitada.
- */
 function countAssignedParentUnits(requestItem) {
   return requestItem.assignedUnits.filter(
     (assignment) => assignment.inventoryUnit?.itemId === requestItem.itemId
@@ -1015,6 +1042,7 @@ function rangeFromRequest(request) {
 
 function unitHasOverlappingReservation(unit, range, ignoreRequestId = null) {
   return (unit.requestItemUnits || []).some((assignment) => {
+    if (assignment.releasedAt) return false;
     const request = assignment.requestItem?.request;
     if (!request) return false;
     if (ignoreRequestId && request.id === ignoreRequestId) return false;

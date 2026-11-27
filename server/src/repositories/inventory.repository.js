@@ -186,6 +186,7 @@ export const inventoryRepository = {
         inventoryUnit: { parentUnitId, itemId: childItemId },
         returnedAt: null,
         lostAt: null,
+        releasedAt: null,
       },
       include: {
         requestItem: {

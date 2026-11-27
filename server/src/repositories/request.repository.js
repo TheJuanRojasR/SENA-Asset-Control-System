@@ -56,6 +56,7 @@ export const requestSelect = {
   estimatedDate: true,
   approvalNote: true,
   packingNotes: true,
+  cancellationCause: true,
   observations: true,
   approvedById: true,
   approvedAt: true,
@@ -106,6 +107,7 @@ export const requestSelect = {
           id: true,
           inventoryUnitId: true,
           loanedAt: true,
+          releasedAt: true,
           inventoryUnit: {
             select: {
               id: true,
@@ -236,7 +238,7 @@ export const requestRepository = {
         },
         childUnits: { where: { status: 'AVAILABLE' }, select: { id: true, itemId: true } },
         requestItemUnits: {
-          where: { returnedAt: null, lostAt: null },
+          where: { returnedAt: null, lostAt: null, releasedAt: null },
           select: {
             requestItem: {
               select: {
