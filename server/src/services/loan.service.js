@@ -6,12 +6,12 @@ import { HTTP_STATUS } from '../constants/httpStatus.js';
 /**
  * RN-PRE-12 — mapeo de la condición de retorno al estado físico de la unidad.
  * RN-PRE-11: el estado se actualiza en la misma operación de devolución.
- * Solo se asignan los estados que el mapeo distingue: OPERATIVO y CON_FALLA (en el modelo
- * actual GOOD y REGULAR). Los estados severos (agotado, averiado, mantenimiento, baja) no
- * se asignan solos; el administrador los corrige a mano.
+ * Solo se asignan los estados que el mapeo distingue: OPERATIVO y CON_FALLA. Los estados
+ * severos (agotado, averiado, mantenimiento, baja) no se asignan solos; el administrador
+ * los corrige a mano.
  */
 const mapConditionToPhysicalState = (functioning) =>
-  functioning === 'FUNCIONA' ? 'GOOD' : 'REGULAR';
+  functioning === 'FUNCIONA' ? 'OPERATIVO' : 'CON_FALLA';
 
 // RN-PRE-13 nombra tres disparadores: falta una pieza, algo no funciona o algo vuelve
 // dañado. La pieza faltante no tiene campo propio: se reporta en la descripción libre

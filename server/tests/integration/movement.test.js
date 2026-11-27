@@ -61,7 +61,7 @@ async function createUnit(itemId, overrides = {}) {
       itemId,
       serialNumber: `SN-MOV-${serialSequence}`,
       status: 'AVAILABLE',
-      physicalState: 'GOOD',
+      physicalState: 'OPERATIVO',
       ...overrides,
     },
   });
@@ -117,7 +117,7 @@ describe('Módulo 11 — Movimientos del inventario', () => {
       const response = await request(app)
         .post('/api/inventory')
         .set('Authorization', admin.token)
-        .send({ itemId: item.id });
+        .send({ itemId: item.id, serialNumber: 'SER-MOV-ALTA' });
       expect(response.status).toBe(201);
       const unitId = response.body.data.unit.id;
 
@@ -354,7 +354,7 @@ describe('Módulo 11 — Movimientos del inventario', () => {
       const unitResponse = await request(app)
         .post('/api/inventory')
         .set('Authorization', admin.token)
-        .send({ itemId: item.id });
+        .send({ itemId: item.id, serialNumber: 'SER-MOV-HIST' });
       const unitId = unitResponse.body.data.unit.id;
       const unitSerial = unitResponse.body.data.unit.serialNumber;
 

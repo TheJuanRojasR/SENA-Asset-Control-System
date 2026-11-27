@@ -168,7 +168,7 @@ async function main() {
         serialNumber: `${item.code}-${String(i + 1).padStart(3, '0')}`,
         environmentId,
         status: 'AVAILABLE',
-        physicalState: 'GOOD',
+        physicalState: 'OPERATIVO',
       }));
 
       await prisma.inventoryUnit.createMany({
@@ -212,7 +212,7 @@ async function main() {
         serialNumber: `${item.code}-${String(i + 1).padStart(3, '0')}`,
         environmentId,
         status: 'AVAILABLE',
-        physicalState: 'GOOD',
+        physicalState: 'OPERATIVO',
       }));
 
       await prisma.inventoryUnit.createMany({
@@ -255,7 +255,7 @@ async function main() {
       serialNumber: `${towerCode}-${String(i + 1).padStart(3, '0')}`,
       environmentId,
       status: 'AVAILABLE',
-      physicalState: 'GOOD',
+      physicalState: 'OPERATIVO',
     }));
 
     await prisma.inventoryUnit.createMany({
@@ -460,7 +460,7 @@ async function main() {
           loanedAt: new Date(),
           returnedAt: isReturned ? new Date() : null,
           returnedById: isReturned ? admin.id : null,
-          physicalStateReturned: isReturned ? 'GOOD' : null,
+          physicalStateReturned: isReturned ? 'OPERATIVO' : null,
         },
       });
     }
@@ -512,7 +512,7 @@ async function main() {
           loanedAt: new Date(),
           returnedAt: new Date(),
           returnedById: admin.id,
-          physicalStateReturned: 'GOOD',
+          physicalStateReturned: 'OPERATIVO',
         },
       });
     }

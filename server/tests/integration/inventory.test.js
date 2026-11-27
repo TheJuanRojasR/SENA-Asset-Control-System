@@ -110,7 +110,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -129,7 +129,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -150,35 +150,24 @@ describe('Inventory endpoints', () => {
   });
 
   describe('POST /api/inventory', () => {
-    it('debe crear una unidad con serial automático', async () => {
+    it('debe rechazar el alta sin serial: el sistema no autogenera seriales', async () => {
       const response = await request(app)
         .post('/api/inventory')
         .set('Authorization', authHeader(admin))
         .send({ itemId: item.id });
 
-      expect(response.status).toBe(201);
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.unit.serialNumber).toBe('LAPTOP-001-001');
-      expect(response.body.data.unit.status).toBe('AVAILABLE');
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body).toLowerCase()).toContain('serial');
     });
 
-    it('debe generar el siguiente serial consecutivo', async () => {
-      await prismaTest.inventoryUnit.create({
-        data: {
-          itemId: item.id,
-          serialNumber: 'LAPTOP-001-005',
-          status: 'AVAILABLE',
-          physicalState: 'GOOD',
-        },
-      });
-
+    it('debe rechazar un serial formado solo por espacios', async () => {
       const response = await request(app)
         .post('/api/inventory')
         .set('Authorization', authHeader(admin))
-        .send({ itemId: item.id });
+        .send({ itemId: item.id, serialNumber: '   ' });
 
-      expect(response.status).toBe(201);
-      expect(response.body.data.unit.serialNumber).toBe('LAPTOP-001-006');
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body).toLowerCase()).toContain('serial');
     });
 
     it('debe crear una unidad con serial manual', async () => {
@@ -197,7 +186,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'DUPLICADO',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -214,7 +203,7 @@ describe('Inventory endpoints', () => {
       const response = await request(app)
         .post('/api/inventory')
         .set('Authorization', authHeader(admin))
-        .send({ itemId: 99999 });
+        .send({ itemId: 99999, serialNumber: 'SER-ITEM-INEXISTENTE' });
 
       expect(response.status).toBe(404);
       expect(response.body.success).toBe(false);
@@ -224,7 +213,7 @@ describe('Inventory endpoints', () => {
       const response = await request(app)
         .post('/api/inventory')
         .set('Authorization', authHeader(admin))
-        .send({ itemId: item.id, environmentId: 99999 });
+        .send({ itemId: item.id, environmentId: 99999, serialNumber: 'SER-AMB-INEXISTENTE' });
 
       expect(response.status).toBe(404);
       expect(response.body.success).toBe(false);
@@ -248,7 +237,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -278,7 +267,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -288,14 +277,14 @@ describe('Inventory endpoints', () => {
         .send({
           environmentId: environment.id,
           status: 'MAINTENANCE',
-          physicalState: 'DAMAGED',
+          physicalState: 'AVERIADO',
           notes: 'Requiere reparación',
         });
 
       expect(response.status).toBe(200);
       expect(response.body.data.unit.environmentId).toBe(environment.id);
       expect(response.body.data.unit.status).toBe('MAINTENANCE');
-      expect(response.body.data.unit.physicalState).toBe('DAMAGED');
+      expect(response.body.data.unit.physicalState).toBe('AVERIADO');
       expect(response.body.data.unit.notes).toBe('Requiere reparación');
     });
 
@@ -305,7 +294,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -326,7 +315,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -350,7 +339,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-004',
           status: 'DISPOSED',
-          physicalState: 'DISPOSED',
+          physicalState: 'DADO_DE_BAJA',
         },
       });
 
@@ -360,7 +349,7 @@ describe('Inventory endpoints', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data.unit.status).toBe('AVAILABLE');
-      expect(response.body.data.unit.physicalState).toBe('GOOD');
+      expect(response.body.data.unit.physicalState).toBe('OPERATIVO');
     });
 
     it('debe eliminar permanentemente una unidad como admin', async () => {
@@ -369,7 +358,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-002',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
           movements: {
             create: [{ type: 'ADJUSTMENT', quantity: 1 }],
           },
@@ -381,7 +370,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-003',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
           parentUnitId: unit.id,
         },
       });
@@ -413,7 +402,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'DISPOSED',
-          physicalState: 'DISPOSED',
+          physicalState: 'DADO_DE_BAJA',
         },
       });
 
@@ -433,7 +422,7 @@ describe('Inventory endpoints', () => {
           itemId: item.id,
           serialNumber: 'LAPTOP-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -452,7 +441,7 @@ describe('Inventory endpoints', () => {
           itemId: otherItem.id,
           serialNumber: 'MOUSE-001-001',
           status: 'AVAILABLE',
-          physicalState: 'GOOD',
+          physicalState: 'OPERATIVO',
         },
       });
 
@@ -465,6 +454,107 @@ describe('Inventory endpoints', () => {
       expect(response.body.data.data).toHaveLength(1);
       expect(response.body.data.data[0].code).toBe('LAPTOP-001');
       expect(response.body.data.data[0].availableStock).toBe(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-INV-01 — Registrar una unidad serializada (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-INV-01 — Registrar una unidad serializada', () => {
+    const countUnits = (itemId) =>
+      prismaTest.inventoryUnit.count({ where: itemId ? { itemId } : {} });
+
+    it('AC-INV-01-1 — Una unidad con serial nuevo queda en el inventario del elemento', async () => {
+      const before = await countUnits(item.id);
+
+      const response = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(admin))
+        .send({ itemId: item.id, serialNumber: 'SER-NUEVO-1' });
+
+      expect(response.status).toBe(201);
+      const unit = response.body.data.unit;
+      expect(unit.itemId).toBe(item.id);
+      expect(unit.serialNumber).toBe('SER-NUEVO-1');
+      expect(unit.physicalState).toBe('OPERATIVO');
+      expect(await countUnits(item.id)).toBe(before + 1);
+
+      const list = await request(app)
+        .get('/api/inventory')
+        .query({ itemId: item.id })
+        .set('Authorization', authHeader(admin));
+      expect(list.status).toBe(200);
+      expect(list.body.data.data.some((row) => row.serialNumber === 'SER-NUEVO-1')).toBe(true);
+    });
+
+    it('AC-INV-01-2 — Un serial ya registrado se rechaza sin crear una segunda unidad', async () => {
+      await prismaTest.inventoryUnit.create({
+        data: {
+          itemId: item.id,
+          serialNumber: 'SER-DUPLICADO',
+          status: 'AVAILABLE',
+          physicalState: 'OPERATIVO',
+        },
+      });
+      const before = await countUnits();
+
+      const sameItem = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(admin))
+        .send({ itemId: item.id, serialNumber: 'SER-DUPLICADO' });
+      expect(sameItem.status).toBe(409);
+      expect(JSON.stringify(sameItem.body).toLowerCase()).toContain('serial');
+
+      const otherItem = await prismaTest.item.create({
+        data: { code: 'OTRO-001', name: 'Otro elemento', categoryId: category.id },
+      });
+      const otherResponse = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(admin))
+        .send({ itemId: otherItem.id, serialNumber: 'SER-DUPLICADO' });
+      expect(otherResponse.status).toBe(409);
+
+      expect(await countUnits()).toBe(before);
+    });
+
+    it('AC-INV-01-3 — Un serial vacío o de solo espacios se rechaza', async () => {
+      const before = await countUnits(item.id);
+
+      for (const serialNumber of ['', '   ']) {
+        const response = await request(app)
+          .post('/api/inventory')
+          .set('Authorization', authHeader(admin))
+          .send({ itemId: item.id, serialNumber });
+        expect(response.status).toBe(400);
+        expect(JSON.stringify(response.body).toLowerCase()).toContain('serial');
+      }
+
+      expect(await countUnits(item.id)).toBe(before);
+    });
+
+    it('AC-INV-01-4 — Un elemento inexistente se rechaza', async () => {
+      const before = await countUnits();
+
+      const response = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(admin))
+        .send({ itemId: 999999, serialNumber: 'SER-HUERFANO' });
+
+      expect(response.status).toBe(404);
+      expect(await countUnits()).toBe(before);
+      expect(await prismaTest.item.count({ where: { code: 'SER-HUERFANO' } })).toBe(0);
+    });
+
+    it('AC-INV-01-5 — El instructor no puede registrar unidades', async () => {
+      const before = await countUnits(item.id);
+
+      const response = await request(app)
+        .post('/api/inventory')
+        .set('Authorization', authHeader(instructor))
+        .send({ itemId: item.id, serialNumber: 'SER-INSTRUCTOR' });
+
+      expect(response.status).toBe(403);
+      expect(await countUnits(item.id)).toBe(before);
     });
   });
 });

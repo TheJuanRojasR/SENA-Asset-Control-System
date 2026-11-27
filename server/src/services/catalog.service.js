@@ -15,10 +15,9 @@ import { catalogRepository } from '../repositories/catalog.repository.js';
  *   `00-contexto-negocio.md`), y no se cuenta por separado si el conjunto está comprometido
  *   en el rango (RN-INV-08).
  *
- * Nota de deuda conocida: el modelo actual de `PhysicalState` tiene cuatro valores
- * (GOOD/REGULAR/DAMAGED/DISPOSED) y `RN-INV-30` fija seis. Mientras el módulo 05 no migre
- * el enum, se interpreta GOOD = OPERATIVO (único estado que presta la unidad como unidad),
- * REGULAR = CON_FALLA del equipo reparable, DAMAGED = AVERIADO y DISPOSED = DADO_DE_BAJA.
+ * `PhysicalState` usa la lista cerrada de seis estados de `RN-INV-30`: solo OPERATIVO
+ * presta la unidad como unidad; CON_FALLA y AVERIADO prestan sus piezas sueltas; los demás
+ * no prestan nada.
  */
 
 const ACTIVE_RESERVATION_STATUSES = new Set(['PENDING', 'APPROVED', 'PACKED']);
@@ -53,7 +52,9 @@ const hasOverlappingReservation = (unit, range) =>
   });
 
 const isLostOrDisposed = (unit) =>
-  unit.declaredLost || unit.status === 'DISPOSED' || unit.physicalState === 'DISPOSED';
+  unit.declaredLost ||
+  unit.status === 'DISPOSED' ||
+  unit.physicalState === 'DADO_DE_BAJA';
 
 /**
  * ¿La pieza `unit` está bloqueada por su conjunto padre?
@@ -65,7 +66,7 @@ const isPieceBlockedByParent = (unit, range) => {
   if (!parent) return true;
   if (parent.declaredLost) return false;
   if (parent.disposalInProgress) return true;
-  if (parent.status === 'DISPOSED' || parent.physicalState === 'DISPOSED') return true;
+  if (parent.status === 'DISPOSED' || parent.physicalState === 'DADO_DE_BAJA') return true;
   if (parent.status === 'LOANED') return true;
   if (parent.status === 'RESERVED' && hasOverlappingReservation(parent, range)) return true;
   return false;
@@ -83,8 +84,8 @@ const isUnitAvailableForRange = (unit, range) => {
     return true;
   }
 
-  // Unidad como unidad: RN-INV-31 — solo OPERATIVO se presta como unidad en el modelo actual.
-  if (unit.physicalState !== 'GOOD') return false;
+  // Unidad como unidad: RN-INV-31 — solo OPERATIVO se presta como unidad.
+  if (unit.physicalState !== 'OPERATIVO') return false;
   if (unit.status === 'RESERVED' && hasOverlappingReservation(unit, range)) return false;
   return true;
 };

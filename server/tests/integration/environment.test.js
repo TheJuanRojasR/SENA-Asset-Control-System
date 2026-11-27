@@ -59,7 +59,7 @@ async function createInventoryUnitForEnvironment(environmentId) {
       serialNumber: 'SN-001',
       environmentId,
       status: 'AVAILABLE',
-      physicalState: 'GOOD',
+      physicalState: 'OPERATIVO',
     },
   });
 }

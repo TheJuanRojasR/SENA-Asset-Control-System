@@ -36,7 +36,7 @@ async function seedUnits(itemId, count, status = 'AVAILABLE') {
       itemId,
       serialNumber: `ITEM-${itemId}-${base}-${String(i).padStart(3, '0')}`,
       status,
-      physicalState: 'GOOD',
+      physicalState: 'OPERATIVO',
     });
   }
   await prismaTest.inventoryUnit.createMany({ data: units });
@@ -589,7 +589,7 @@ describe('Request endpoints', () => {
 
       const assignedUnits = response.body.data.request.requestItems[0].assignedUnits;
       expect(assignedUnits.every((u) => u.inventoryUnit.status === 'AVAILABLE')).toBe(true);
-      expect(assignedUnits.every((u) => u.inventoryUnit.physicalState === 'GOOD')).toBe(true);
+      expect(assignedUnits.every((u) => u.inventoryUnit.physicalState === 'OPERATIVO')).toBe(true);
 
       const movements = await prismaTest.movement.findMany({ where: { requestId } });
       const returns = movements.filter((m) => m.type === 'RETURN');

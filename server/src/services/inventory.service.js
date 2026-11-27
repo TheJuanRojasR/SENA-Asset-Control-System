@@ -23,12 +23,12 @@ export const inventoryService = {
       }
     }
 
-    const serialNumber = data.serialNumber || (await generateNextSerial(item.code));
+    const serialNumber = data.serialNumber;
 
     const exists = await inventoryRepository.findBySerialNumber(serialNumber);
     if (exists) {
       throw new AppError(
-        'Ya existe una unidad con ese serial',
+        `Ya existe una unidad con el serial ${serialNumber}`,
         HTTP_STATUS.CONFLICT,
         'SERIAL_EXISTS'
       );
@@ -147,7 +147,8 @@ export const inventoryService = {
 
     const unit = await inventoryRepository.update(id, {
       status: 'AVAILABLE',
-      physicalState: existing.physicalState === 'DISPOSED' ? 'GOOD' : existing.physicalState,
+      physicalState:
+        existing.physicalState === 'DADO_DE_BAJA' ? 'OPERATIVO' : existing.physicalState,
     });
 
     return { unit, message: 'Unidad restablecida correctamente' };
@@ -333,22 +334,6 @@ export const inventoryService = {
   },
 };
 
-async function generateNextSerial(itemCode) {
-  const existingSerials = await inventoryRepository.findExistingSerialsByItemCode(itemCode);
-  let max = 0;
-  const pattern = new RegExp(`^${escapeRegExp(itemCode)}-(\\d+)$`);
-
-  for (const serial of existingSerials) {
-    const match = serial.match(pattern);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > max) max = num;
-    }
-  }
-
-  const next = max + 1;
-  return `${itemCode}-${String(next).padStart(3, '0')}`;
-}
 
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
