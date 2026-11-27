@@ -525,9 +525,13 @@ describe('Request endpoints', () => {
       const assignedUnits = response.body.data.request.requestItems[0].assignedUnits;
       expect(assignedUnits.every((u) => u.inventoryUnit.status === 'LOANED')).toBe(true);
 
-      const movements = await prismaTest.movement.findMany({ where: { requestId } });
+      // RN-MOV-01: la creación deja movimientos RESERVATION y la entrega deja un LOAN por
+      // unidad. Este caso verifica la entrega: exactamente dos movimientos de tipo LOAN.
+      const movements = await prismaTest.movement.findMany({
+        where: { requestId, type: 'LOAN' },
+      });
       expect(movements).toHaveLength(2);
-      expect(movements.every((m) => m.type === 'LOAN' && m.quantity === 1)).toBe(true);
+      expect(movements.every((m) => m.quantity === 1)).toBe(true);
     });
 
     it('debe rechazar entregar una solicitud no empacada', async () => {
