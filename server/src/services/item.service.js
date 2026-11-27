@@ -163,6 +163,43 @@ export const itemService = {
    * unidad está comprometida (prestada o reservada) y se acepta si no hay ninguna; las
    * unidades dadas de baja o declaradas perdidas no bloquean (RN-PRE-15).
    */
+  /**
+   * RN-MOV-01: el ajuste de cantidad de un consumible deja un movimiento de ajuste solo
+   * cuando la cantidad cambia (no mueve unidades físicas: el sujeto es el elemento).
+   */
+  async adjustConsumableStock(id, stock, adminId) {
+    const item = await itemRepository.findById(id);
+    if (!item) {
+      throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
+    }
+    if (!item.isConsumable) {
+      throw new AppError(
+        'Solo un consumible se controla por cantidad',
+        HTTP_STATUS.BAD_REQUEST,
+        'ITEM_NOT_CONSUMABLE'
+      );
+    }
+
+    const previous = item.stock ?? 0;
+    if (previous === stock) {
+      return { item, changed: false };
+    }
+
+    const updated = await itemRepository.update(id, { stock });
+
+    await prisma.movement.create({
+      data: {
+        type: 'ADJUSTMENT',
+        itemId: id,
+        quantity: stock - previous,
+        responsibleId: adminId ?? null,
+        notes: `Ajuste de stock de ${previous} a ${stock}`,
+      },
+    });
+
+    return { item: updated, changed: true };
+  },
+
   async deleteItem(id) {
     const item = await itemRepository.findById(id);
     if (!item) {

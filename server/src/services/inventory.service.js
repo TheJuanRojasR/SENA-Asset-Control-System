@@ -6,7 +6,7 @@ import { AppError } from '../utils/AppError.js';
 import { HTTP_STATUS } from '../constants/httpStatus.js';
 
 export const inventoryService = {
-  async createInventoryUnit(data) {
+  async createInventoryUnit(data, userId) {
     const item = await itemRepository.findById(data.itemId);
     if (!item) {
       throw new AppError('Ítem no encontrado', HTTP_STATUS.NOT_FOUND, 'ITEM_NOT_FOUND');
@@ -37,6 +37,18 @@ export const inventoryService = {
     const unit = await inventoryRepository.create({
       ...data,
       serialNumber,
+    });
+
+    // RN-MOV-01: el alta de una unidad deja un movimiento con su actor y su fecha.
+    await prisma.movement.create({
+      data: {
+        type: 'ENTRY',
+        itemId: unit.itemId,
+        inventoryUnitId: unit.id,
+        quantity: 1,
+        responsibleId: userId ?? null,
+        notes: 'Alta de unidad',
+      },
     });
 
     return { unit };
@@ -88,7 +100,7 @@ export const inventoryService = {
     return { unit };
   },
 
-  async disposeInventoryUnit(id) {
+  async disposeInventoryUnit(id, userId, reason = 'Baja de unidad') {
     const existing = await inventoryRepository.findById(id);
     if (!existing) {
       throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
@@ -103,6 +115,19 @@ export const inventoryService = {
     }
 
     const unit = await inventoryRepository.update(id, { status: 'DISPOSED' });
+
+    // RN-INV-17 / RN-MOV-01: la baja deja un movimiento con motivo y actor.
+    await prisma.movement.create({
+      data: {
+        type: 'DISPOSAL',
+        itemId: existing.itemId,
+        inventoryUnitId: id,
+        quantity: 1,
+        responsibleId: userId ?? null,
+        notes: reason,
+      },
+    });
+
     return { unit, message: 'Unidad dada de baja correctamente' };
   },
 
@@ -218,9 +243,12 @@ export const inventoryService = {
         )
       );
 
+      // RN-MOV-01: el ensamblaje es un evento propio y el movimiento identifica la unidad
+      // ensamblada y el compuesto del que pasa a formar parte.
       await tx.movement.create({
         data: {
-          type: 'ADJUSTMENT',
+          type: 'ASSEMBLY',
+          itemId: parent.itemId,
           inventoryUnitId: parentUnitId,
           quantity: children.length,
           responsibleId: userId,
@@ -263,9 +291,11 @@ export const inventoryService = {
         )
       );
 
+      // RN-MOV-01: el desensamblaje es un evento propio, distinto del ensamblaje.
       await tx.movement.create({
         data: {
-          type: 'ADJUSTMENT',
+          type: 'DISASSEMBLY',
+          itemId: parent.itemId,
           inventoryUnitId: parentUnitId,
           quantity: children.length,
           responsibleId: userId,
