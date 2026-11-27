@@ -12,7 +12,7 @@ Lo usan **ambos actores**, con papeles distintos: el instructor crea, modifica y
 
 Este módulo es dueño de **la reserva y de cada transición de la solicitud**. Las **devoluciones** y la **condición de retorno** son del epic 07; el **cálculo de la disponibilidad** que el instructor consulta es del epic 08; las **unidades y sus estados físicos** son del epic 05; el **alta del elemento** y la marca obligatorio/opcional de sus componentes son del epic 04.
 
-Estado: **en ejecución parcial**. Nueve historias, 49 criterios; **42 `OK`** (US-SOL-01 a US-SOL-08) y 7 sin ejecutar.
+Estado: **49 de 49 criterios ejecutados y en `OK`** en la rama `devJoseph-solicitudes`, con test `AC-SOL-*` en `server/tests/integration/request.test.js`. No quedan criterios sin ejecutar.
 
 ## Índice de historias
 
@@ -929,7 +929,7 @@ Sin decisión todavía: la reserva excedente cuando se aprueba menos de lo solic
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: 42 de los **49** criterios corren con test y están en `OK` (US-SOL-01 a US-SOL-08, rama `devJoseph-solicitudes`); queda US-SOL-09 (consulta de solicitudes).
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó completo: los **49** criterios tienen test y están en `OK`. Se añadió la reserva por rango, la aprobación con cantidades/nota, la modificación atómica, el empaque con verificación física, la entrega total/parcial, la cancelación con traza y el vencimiento a 2 días/23:59 en `America/Bogota`, además de los avisos internos y los canales externos opcionales.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
@@ -975,13 +975,13 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `AC-SOL-08-1` | `RN-SOL-07`, `RN-PRE-02` | `OK` |
 | `AC-SOL-08-2` | `RN-NEG-03` | `OK` |
 | `AC-SOL-08-3` | `RN-SOL-10` | `OK` |
-| `AC-SOL-09-1` | `RN-USR-05` | Sin ejecutar |
-| `AC-SOL-09-2` | `RN-SOL-04` | Sin ejecutar |
-| `AC-SOL-09-3` | `RN-PRE-17` | Sin ejecutar |
-| `AC-SOL-09-4` | `Estándar` | Sin ejecutar |
-| `AC-SOL-09-5` | `RN-NOT-01` | Sin ejecutar |
-| `AC-SOL-09-6` | `RN-CTX-02` | Sin ejecutar |
-| `AC-SOL-09-7` | `RN-NOT-02` | Sin ejecutar |
+| `AC-SOL-09-1` | `RN-USR-05` | `OK` |
+| `AC-SOL-09-2` | `RN-SOL-04` | `OK` |
+| `AC-SOL-09-3` | `RN-PRE-17` | `OK` |
+| `AC-SOL-09-4` | `Estándar` | `OK` |
+| `AC-SOL-09-5` | `RN-NOT-01` | `OK` |
+| `AC-SOL-09-6` | `RN-CTX-02` | `OK` |
+| `AC-SOL-09-7` | `RN-NOT-02` | `OK` |
 
 | US | ACs | Regla de negocio | Ciclo de vida | `Estándar` |
 |----|-----|------------------|---------------|------------|
@@ -996,7 +996,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-SOL-09` | 7 | 6 | 0 | 1 |
 | **Total** | **49** | **38** | **3** | **8** |
 
-**Ejecución:** 42 de 49 criterios en `OK` (US-SOL-01 a US-SOL-08). **38** criterios se apoyan en una regla de negocio confirmada, **8** declaran un invariante técnico y
+**Ejecución:** **49 de 49** criterios en `OK`. **38** criterios se apoyan en una regla de negocio confirmada, **8** declaran un invariante técnico y
 **3** declaran el ciclo de vida. `AC-SOL-06-2` declara las dos últimas —la entrega es idempotente y su
 transición es del ciclo—, así que las tres columnas **no son excluyentes**: el total de la tabla cuenta
 criterios, no declaraciones.
