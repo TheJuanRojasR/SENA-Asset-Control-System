@@ -12,7 +12,7 @@ Lo usan **ambos actores**, con papeles distintos: el instructor crea, modifica y
 
 Este módulo es dueño de **la reserva y de cada transición de la solicitud**. Las **devoluciones** y la **condición de retorno** son del epic 07; el **cálculo de la disponibilidad** que el instructor consulta es del epic 08; las **unidades y sus estados físicos** son del epic 05; el **alta del elemento** y la marca obligatorio/opcional de sus componentes son del epic 04.
 
-Estado: **en ejecución parcial**. Nueve historias, 49 criterios; **20 `OK`** (US-SOL-01 a US-SOL-03) y 29 sin ejecutar.
+Estado: **en ejecución parcial**. Nueve historias, 49 criterios; **28 `OK`** (US-SOL-01 a US-SOL-05) y 21 sin ejecutar.
 
 ## Índice de historias
 
@@ -929,7 +929,7 @@ Sin decisión todavía: la reserva excedente cuando se aprueba menos de lo solic
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: 20 de los **49** criterios corren con test y están en `OK` (US-SOL-01 a US-SOL-03, rama `devJoseph-solicitudes`); el resto sigue sin ejecutar.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: 28 de los **49** criterios corren con test y están en `OK` (US-SOL-01 a US-SOL-05, rama `devJoseph-solicitudes`); el resto sigue sin ejecutar.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
@@ -953,14 +953,14 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `AC-SOL-03-1` | `RN-SOL-04` | `OK` |
 | `AC-SOL-03-2` | `RN-NEG-03` | `OK` |
 | `AC-SOL-03-3` | `RN-SOL-04` | `OK` |
-| `AC-SOL-04-1` | `RN-SOL-05` | Sin ejecutar |
-| `AC-SOL-04-2` | `Estándar` | Sin ejecutar |
-| `AC-SOL-05-1` | `RN-SOL-02` | Sin ejecutar |
-| `AC-SOL-05-2` | `RN-INV-02`, `RN-INV-24` | Sin ejecutar |
-| `AC-SOL-05-3` | `RN-INV-24` | Sin ejecutar |
-| `AC-SOL-05-4` | `Estándar` | Sin ejecutar |
-| `AC-SOL-05-5` | `RN-INV-11` | Sin ejecutar |
-| `AC-SOL-05-6` | `RN-SOL-02`, `RN-NOT-01` | Sin ejecutar |
+| `AC-SOL-04-1` | `RN-SOL-05` | `OK` |
+| `AC-SOL-04-2` | `Estándar` | `OK` |
+| `AC-SOL-05-1` | `RN-SOL-02` | `OK` |
+| `AC-SOL-05-2` | `RN-INV-02`, `RN-INV-24` | `OK` |
+| `AC-SOL-05-3` | `RN-INV-24` | `OK` |
+| `AC-SOL-05-4` | `Estándar` | `OK` |
+| `AC-SOL-05-5` | `RN-INV-11` | `OK` |
+| `AC-SOL-05-6` | `RN-SOL-02`, `RN-NOT-01` | `OK` |
 | `AC-SOL-06-1` | Ciclo de vida | Sin ejecutar |
 | `AC-SOL-06-2` | Ciclo de vida, `Estándar` | Sin ejecutar |
 | `AC-SOL-06-3` | `RN-PRE-02` | Sin ejecutar |
@@ -996,7 +996,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-SOL-09` | 7 | 6 | 0 | 1 |
 | **Total** | **49** | **38** | **3** | **8** |
 
-**Ejecución:** 20 de 49 criterios en `OK` (US-SOL-01 a US-SOL-03). **38** criterios se apoyan en una regla de negocio confirmada, **8** declaran un invariante técnico y
+**Ejecución:** 28 de 49 criterios en `OK` (US-SOL-01 a US-SOL-05). **38** criterios se apoyan en una regla de negocio confirmada, **8** declaran un invariante técnico y
 **3** declaran el ciclo de vida. `AC-SOL-06-2` declara las dos últimas —la entrega es idempotente y su
 transición es del ciclo—, así que las tres columnas **no son excluyentes**: el total de la tabla cuenta
 criterios, no declaraciones.
