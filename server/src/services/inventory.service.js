@@ -22,8 +22,16 @@ export const inventoryService = {
       );
     }
 
-    if (data.environmentId) {
-      const environment = await environmentRepository.findById(data.environmentId);
+    let environmentId = data.environmentId;
+
+    // RN-CTX-08 / AC-INV-11-1: la ubicación de una unidad nueva es el Ambiente 104.
+    if (!environmentId) {
+      const baseEnvironment = await environmentRepository.findByCode('104');
+      if (baseEnvironment) environmentId = baseEnvironment.id;
+    }
+
+    if (environmentId) {
+      const environment = await environmentRepository.findById(environmentId);
       if (!environment) {
         throw new AppError(
           'Ambiente no encontrado',
@@ -46,6 +54,7 @@ export const inventoryService = {
 
     const unit = await inventoryRepository.create({
       ...data,
+      environmentId,
       serialNumber,
     });
 
@@ -93,6 +102,15 @@ export const inventoryService = {
     const existing = await inventoryRepository.findById(id);
     if (!existing) {
       throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
+    }
+
+    // RN-INV-42 / AC-INV-12-1/3: a mantenimiento solo se envía un equipo CON_FALLA.
+    if (data.physicalState === 'EN_MANTENIMIENTO' && existing.physicalState !== 'CON_FALLA') {
+      throw new AppError(
+        'Solo un equipo con falla se envía a mantenimiento',
+        HTTP_STATUS.CONFLICT,
+        'INVALID_MAINTENANCE_STATE'
+      );
     }
 
     if (data.environmentId) {
