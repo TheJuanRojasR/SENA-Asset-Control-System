@@ -265,10 +265,31 @@ export const inventoryService = {
     return prisma.$transaction(async (tx) => {
       const parent = await tx.inventoryUnit.findUnique({
         where: { id: parentUnitId },
+        include: {
+          requestItemUnits: { where: { returnedAt: null, lostAt: null } },
+          childUnits: { select: { id: true, status: true } },
+        },
       });
 
       if (!parent) {
         throw new AppError('Unidad padre no encontrada', HTTP_STATUS.NOT_FOUND, 'PARENT_NOT_FOUND');
+      }
+
+      // RN-INV-38 / AC-INV-03-2: no se desensambla un conjunto comprometido (préstamo
+      // vigente o reserva activa), ni por él ni por alguna de sus piezas.
+      const parentCommitted =
+        parent.status === 'LOANED' ||
+        parent.status === 'RESERVED' ||
+        parent.requestItemUnits.length > 0;
+      const childCommitted = parent.childUnits.some(
+        (child) => child.status === 'LOANED' || child.status === 'RESERVED'
+      );
+      if (parentCommitted || childCommitted) {
+        throw new AppError(
+          'No se puede desensamblar un equipo comprometido',
+          HTTP_STATUS.CONFLICT,
+          'ASSEMBLY_COMMITTED'
+        );
       }
 
       const children = await tx.inventoryUnit.findMany({
