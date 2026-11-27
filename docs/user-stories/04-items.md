@@ -8,7 +8,7 @@ Este módulo resuelve el **catálogo de elementos**: el elemento serializable qu
 
 El catálogo **no es un listado de existencias**: es la definición del modelo. Un elemento recién creado no tiene nada adentro (`RN-INV-40`) y su stock inicial es cero; las unidades las da de alta el epic 05 una por una. Lo **escribe el administrador** (`RN-CTX-05`); el instructor solicita, recoge y devuelve, y la escritura sobre el catálogo es acción administrativa. El alta exige una **categoría existente**, que administra el epic 10 (`RN-CATEG-01`, `RN-CATEG-02`).
 
-Si el módulo falla, no hay modelo al que dar unidades, un consumible vale siempre cero o no tiene unidad de medida, o la composición no dice qué piezas forman el conjunto que el instructor pide completo. Estado hoy: **avance parcial**: 23 de 27 criterios ejecutados y en `OK` en la rama `devJoseph-items-composicion` (US-ITE-01…05, con test `AC-ITE-*` en `server/tests/integration/item.test.js`). Solo `US-ITE-06` (baja del elemento) sigue sin ejecutar y `AC-ITE-05-2` es **No implementable** por la regla `Derivada`.
+Si el módulo falla, no hay modelo al que dar unidades, un consumible vale siempre cero o no tiene unidad de medida, o la composición no dice qué piezas forman el conjunto que el instructor pide completo. Estado hoy: **26 de 27 criterios ejecutados y en `OK`** en la rama `devJoseph-items-baja` (US-ITE-01…06, con test `AC-ITE-*` en `server/tests/integration/item.test.js`). El criterio restante, `AC-ITE-05-2`, es **No implementable** por su regla `Derivada` (no es deuda de implementación).
 
 > **Frontera con los epics 05, 06, 07, 08 y 10.** Las **unidades** y el **stock** del elemento son el epic 05; la verificación de los componentes al empacar y el registro de la ausencia son el epic 06; la condición de retorno de una unidad devuelta es el epic 07; la disponibilidad por rango es el epic 08; y el **alta y la administración de categorías** es el epic 10. Este epic especifica **solo la definición del catálogo**: ningún criterio de esas historias se repite acá.
 
@@ -625,7 +625,7 @@ Sin decisión todavía: la unicidad del nombre de un elemento, la edición de lo
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: US-ITE-01…05 ya corren con test y quedaron en `OK`; solo US-ITE-06 sigue sin ejecutar. La verificación encontró y corrigió varios `GAP` reales: un serializable autogeneraba seriales, el consumible no tenía stock propio, no existía la tenencia, `minStock` no podía quedar sin umbral, la composición rechazaba repeticiones y no detectaba ciclos indirectos ni protegía el retiro de componentes con unidades ensambladas.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó en la rama `devJoseph-items-baja`: 26 criterios con test en `server/tests/integration/item.test.js` y en `OK`; `AC-ITE-05-2` queda fuera por ser `Derivada`. La verificación corrigió los `GAP` reales del módulo: seriales autogenerados, stock de consumibles, tenencia, `minStock` sin umbral, repeticiones de composición, ciclos indirectos, retiro de componentes ensamblados y la baja del elemento (que desactivaba sin controlar unidades comprometidas).
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
@@ -653,9 +653,9 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `AC-ITE-05-1` | `RN-INV-29` | `OK` |
 | `AC-ITE-05-2` | `RN-INV-29` + `Derivada` (`RN-INV-35`) | **No implementable** — ninguna regla afirma que quitar un componente sea posible cuando el elemento no tiene unidades ensambladas |
 | `AC-ITE-05-3` | `RN-INV-35` | `OK` |
-| `AC-ITE-06-1` | `RN-INV-45`, `RN-INV-16` | Sin ejecutar |
-| `AC-ITE-06-2` | `RN-INV-45` | Sin ejecutar |
-| `AC-ITE-06-3` | `RN-INV-45` | Sin ejecutar |
+| `AC-ITE-06-1` | `RN-INV-45`, `RN-INV-16` | `OK` |
+| `AC-ITE-06-2` | `RN-INV-45` | `OK` |
+| `AC-ITE-06-3` | `RN-INV-45` | `OK` |
 
 | US | ACs | Implementables (`RN` / `Estándar`) | `Derivada` (no implementable) | `OPEN` |
 |----|-----|-----------------------------------|-------------------------------|--------|
@@ -667,7 +667,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-ITE-06` | 3 | 3 | 0 | 0 |
 | **Total** | **27** | **26** | **1** | **0** |
 
-Totales: **6 historias y 27 criterios**, **23 `OK`, 3 sin ejecutar (US-ITE-06) y 1 `Derivada` no implementable** (avance parcial en `devJoseph-items-composicion`). **26 son implementables**: **22** se apoyan en una regla de negocio confirmada y **4** en un invariante técnico (`Estándar`: `AC-ITE-01-1`, `AC-ITE-01-2`, `AC-ITE-03-3`, `AC-ITE-03-4`). **Uno es `Derivada` y no se implementa**: `AC-ITE-05-2`. Ninguno está en `OPEN`. Las citas de regla suman **27** sobre los **23** criterios que citan al menos una: `AC-ITE-02-1`, `AC-ITE-04-1`, `AC-ITE-05-2` y `AC-ITE-06-1` citan dos.
+Totales: **6 historias y 27 criterios**, **26 `OK` y 1 `Derivada` no implementable** (`AC-ITE-05-2`); no quedan criterios sin ejecutar. **26 son implementables**: **22** se apoyan en una regla de negocio confirmada y **4** en un invariante técnico (`Estándar`: `AC-ITE-01-1`, `AC-ITE-01-2`, `AC-ITE-03-3`, `AC-ITE-03-4`). **Uno es `Derivada` y no se implementa**: `AC-ITE-05-2`. Ninguno está en `OPEN`. Las citas de regla suman **27** sobre los **23** criterios que citan al menos una: `AC-ITE-02-1`, `AC-ITE-04-1`, `AC-ITE-05-2` y `AC-ITE-06-1` citan dos.
 
 ## Anexo — Datos de prueba
 
