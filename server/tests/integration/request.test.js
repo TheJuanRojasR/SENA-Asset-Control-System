@@ -3,6 +3,11 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import requestRoutes from '../../src/routes/request.routes.js';
 import notificationRoutes from '../../src/routes/notification.routes.js';
+import {
+  reservationCleanupService,
+  expiryThresholdFor,
+  bogotaInstant,
+} from '../../src/services/reservationCleanup.service.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { generateTokens } from '../../src/utils/jwt.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
@@ -661,7 +666,7 @@ describe('Request endpoints', () => {
         .delete(`/api/requests/${pending.id}`)
         .set('Authorization', authHeader(instructor));
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(403);
       expect(response.body.success).toBe(false);
     });
   });
@@ -1126,8 +1131,15 @@ describe('Request endpoints', () => {
         })
       ).toBe(2);
       expect(
-        await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } })
+        await prismaTest.requestItemUnit.count({
+          where: { requestItem: { requestId }, releasedAt: null },
+        })
       ).toBe(0);
+      expect(
+        await prismaTest.requestItemUnit.count({
+          where: { requestItem: { requestId }, releasedAt: { not: null } },
+        })
+      ).toBe(2);
 
       const again = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
       expect(again.status).toBe(201);
@@ -1650,6 +1662,312 @@ describe('Request endpoints', () => {
       });
       expect(assignments).toHaveLength(3);
       assignments.forEach((assignment) => expect(assignment.loanedAt).not.toBeNull());
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-SOL-07 / US-SOL-08 — Cancelar y expirar (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-SOL-07/08 — Cancelar y expirar', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayOffset = (offset) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      return new Date(date.getTime() + offset * DAY_MS);
+    };
+
+    const createRequestWith = async ({ lines, user = instructor, pickupOffset = 1 }) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(user))
+        .send({
+          items: lines,
+          pickupDate: dayOffset(pickupOffset),
+          estimatedDate: dayOffset(pickupOffset + 2),
+        });
+
+    const approve = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+
+    const pack = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+
+    const deliver = async (requestId, body) => {
+      await request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin))
+        .send(body || {});
+    };
+
+    const cancel = (requestId, user = admin) =>
+      request(app)
+        .delete(`/api/requests/${requestId}`)
+        .set('Authorization', authHeader(user));
+
+    const getRequest = (requestId, user = admin) =>
+      request(app)
+        .get(`/api/requests/${requestId}`)
+        .set('Authorization', authHeader(user));
+
+    const setPickupDate = (requestId, date) =>
+      prismaTest.request.update({ where: { id: requestId }, data: { pickupDate: date } });
+
+    const activeAssignments = (requestId) =>
+      prismaTest.requestItemUnit.count({
+        where: { requestItem: { requestId }, releasedAt: null },
+      });
+
+    const prepare = async (qty, { approved = false, packed = false } = {}) => {
+      await seedUnits(item.id, qty);
+      const created = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: qty }],
+      });
+      if (!created.body.data) {
+        throw new Error(`CREATE FAIL ${created.status} ${JSON.stringify(created.body)}`);
+      }
+      const requestId = created.body.data.request.id;
+      if (approved || packed) await approve(requestId);
+      if (packed) await pack(requestId);
+      return requestId;
+    };
+
+    it('AC-SOL-07-1 — El instructor cancela solo en PENDING y el rechazo no toca asignaciones', async () => {
+      // PENDING: puede cancelar.
+      const pendingId = await prepare(1);
+      const cancelled = await cancel(pendingId, instructor);
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.body.data.request.status).toBe('CANCELLED');
+
+      // APPROVED: 403 y reserva intacta.
+      const approvedId = await prepare(1, { approved: true });
+      const forbiddenApproved = await cancel(approvedId, instructor);
+      expect(forbiddenApproved.status).toBe(403);
+      expect((await prismaTest.request.findUnique({ where: { id: approvedId } })).status).toBe(
+        'APPROVED'
+      );
+      expect(await activeAssignments(approvedId)).toBe(1);
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'RESERVED' },
+        })
+      ).toBeGreaterThanOrEqual(1);
+
+      // PACKED: 403 y las 2 asignaciones siguen.
+      const packedId = await prepare(2, { packed: true });
+      const forbiddenPacked = await cancel(packedId, instructor);
+      expect(forbiddenPacked.status).toBe(403);
+      expect((await prismaTest.request.findUnique({ where: { id: packedId } })).status).toBe(
+        'PACKED'
+      );
+      expect(await activeAssignments(packedId)).toBe(2);
+    });
+
+    it('AC-SOL-07-2 — El administrador cancela antes de la entrega en PENDING/APPROVED/PACKED', async () => {
+      const packedId = await prepare(2, { packed: true });
+      const packedResponse = await cancel(packedId, admin);
+      expect(packedResponse.status).toBe(200);
+      expect(packedResponse.body.data.request.status).toBe('CANCELLED');
+
+      const pendingId = await prepare(1);
+      await setPickupDate(pendingId, new Date(Date.now() - DAY_MS));
+      const pendingResponse = await cancel(pendingId, admin);
+      expect(pendingResponse.status).toBe(200);
+      expect(pendingResponse.body.data.request.status).toBe('CANCELLED');
+
+      const approvedId = await prepare(2, { approved: true });
+      const approvedResponse = await cancel(approvedId, admin);
+      expect(approvedResponse.status).toBe(200);
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'AVAILABLE' },
+        })
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    it('AC-SOL-07-3 — La cancelación libera la reserva del rango', async () => {
+      const requestId = await prepare(2, { approved: true });
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'RESERVED' },
+        })
+      ).toBe(2);
+
+      const response = await cancel(requestId, admin);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('CANCELLED');
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'AVAILABLE' },
+        })
+      ).toBe(2);
+
+      const again = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      expect(again.status).toBe(201);
+    });
+
+    it('AC-SOL-07-4 — Cancelar una solicitud empaquetada conserva los seriales asignados', async () => {
+      const requestId = await prepare(2, { packed: true });
+      const response = await cancel(requestId, admin);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('CANCELLED');
+
+      const trace = await prismaTest.requestItemUnit.count({
+        where: { requestItem: { requestId } },
+      });
+      expect(trace).toBe(2);
+
+      const query = await getRequest(requestId, admin);
+      const assigned = query.body.data.request.requestItems[0].assignedUnits;
+      expect(assigned).toHaveLength(2);
+      assigned.forEach((assignment) => {
+        expect(assignment.inventoryUnit.serialNumber).toBeTruthy();
+        expect(assignment.releasedAt).not.toBeNull();
+      });
+    });
+
+    it('AC-SOL-07-5 — Cancelar una solicitud con entrega registrada se rechaza', async () => {
+      const deliveredId = await prepare(2, { packed: true });
+      await deliver(deliveredId, {});
+      const deliveredAttempt = await cancel(deliveredId, admin);
+      expect(deliveredAttempt.status).toBe(409);
+      expect((await prismaTest.request.findUnique({ where: { id: deliveredId } })).status).toBe(
+        'DELIVERED'
+      );
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'LOANED' },
+        })
+      ).toBeGreaterThanOrEqual(2);
+
+      const partialId = await prepare(3, { packed: true });
+      await deliver(partialId, { items: [{ itemId: item.id, deliveredQty: 2 }] });
+      const partialAttempt = await cancel(partialId, admin);
+      expect(partialAttempt.status).toBe(409);
+      expect(
+        (await prismaTest.request.findUnique({ where: { id: partialId } })).status
+      ).toBe('PARTIALLY_DELIVERED');
+      const assignments = await prismaTest.requestItemUnit.findMany({
+        where: { requestItem: { requestId: partialId } },
+        include: { inventoryUnit: true },
+      });
+      expect(assignments.filter((assignment) => assignment.loanedAt)).toHaveLength(2);
+      expect(
+        assignments.filter(
+          (assignment) => !assignment.loanedAt && assignment.inventoryUnit.status === 'RESERVED'
+        )
+      ).toHaveLength(1);
+    });
+
+    it('AC-SOL-08-1 — Vence pasados 2 días con corte 23:59 y respeta los bordes', async () => {
+      const pickup = new Date(Date.UTC(2026, 10, 10));
+
+      const createExpiringCase = async ({ approved = false, packed = false } = {}) => {
+        const requestId = await prepare(2, { approved, packed });
+        await setPickupDate(requestId, pickup);
+        return requestId;
+      };
+
+      // APPOVED vencida.
+      const approvedId = await createExpiringCase({ approved: true });
+      const approvedResult = await reservationCleanupService.cleanupExpiredReservations({
+        now: expiryThresholdFor(pickup),
+      });
+      expect(approvedResult.cancelledRequests).toBeGreaterThanOrEqual(1);
+      const approvedStored = await prismaTest.request.findUnique({ where: { id: approvedId } });
+      expect(approvedStored.status).toBe('CANCELLED');
+      expect(approvedStored.cancellationCause).toBe('EXPIRED');
+
+      // PACKED vencida con traza conservada.
+      const packedId = await createExpiringCase({ packed: true });
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: new Date(expiryThresholdFor(pickup).getTime() + 60 * 1000),
+      });
+      expect((await prismaTest.request.findUnique({ where: { id: packedId } })).status).toBe(
+        'CANCELLED'
+      );
+      expect(
+        await prismaTest.requestItemUnit.count({
+          where: { requestItem: { requestId: packedId } },
+        })
+      ).toBe(2);
+
+      // Bordes: 00:00 y 23:58 del segundo día no cancelan; 23:59 sí.
+      const early = await createExpiringCase({ approved: true });
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: bogotaInstant(2026, 10, 12, 0, 0),
+      });
+      expect((await prismaTest.request.findUnique({ where: { id: early } })).status).toBe(
+        'APPROVED'
+      );
+
+      const almost = await createExpiringCase({ approved: true });
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: bogotaInstant(2026, 10, 12, 23, 58),
+      });
+      expect((await prismaTest.request.findUnique({ where: { id: almost } })).status).toBe(
+        'APPROVED'
+      );
+
+      const atCutoff = await createExpiringCase({ approved: true });
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: bogotaInstant(2026, 10, 12, 23, 59),
+      });
+      expect((await prismaTest.request.findUnique({ where: { id: atCutoff } })).status).toBe(
+        'CANCELLED'
+      );
+
+      // Retirada a tiempo: no se cancela.
+      const deliveredId = await prepare(2, { packed: true });
+      await setPickupDate(deliveredId, pickup);
+      await deliver(deliveredId, {});
+      const deliveredNow = new Date(expiryThresholdFor(pickup).getTime() + DAY_MS);
+      await reservationCleanupService.cleanupExpiredReservations({ now: deliveredNow });
+      expect((await prismaTest.request.findUnique({ where: { id: deliveredId } })).status).toBe(
+        'DELIVERED'
+      );
+    });
+
+    it('AC-SOL-08-2 — La cancelación automática libera la reserva', async () => {
+      const pickup = new Date(Date.UTC(2026, 10, 10));
+      const requestId = await prepare(2, { approved: true });
+      await setPickupDate(requestId, pickup);
+
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: new Date(expiryThresholdFor(pickup).getTime() + DAY_MS),
+      });
+      expect((await prismaTest.request.findUnique({ where: { id: requestId } })).status).toBe(
+        'CANCELLED'
+      );
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'AVAILABLE' },
+        })
+      ).toBe(2);
+      expect(await activeAssignments(requestId)).toBe(0);
+    });
+
+    it('AC-SOL-08-3 — La cancelación por vencimiento se distingue de la manual', async () => {
+      const pickup = new Date(Date.UTC(2026, 10, 10));
+      const expiredId = await prepare(1, { approved: true });
+      await setPickupDate(expiredId, pickup);
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: new Date(expiryThresholdFor(pickup).getTime() + DAY_MS),
+      });
+
+      const manualId = await prepare(1);
+      const manual = await cancel(manualId, admin);
+      expect(manual.status).toBe(200);
+
+      const expired = await prismaTest.request.findUnique({ where: { id: expiredId } });
+      const manualStored = await prismaTest.request.findUnique({ where: { id: manualId } });
+      expect(expired.status).toBe('CANCELLED');
+      expect(expired.cancellationCause).toBe('EXPIRED');
+      expect(manualStored.status).toBe('CANCELLED');
+      expect(manualStored.cancellationCause).toBe('MANUAL');
     });
   });
 });
