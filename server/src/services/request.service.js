@@ -306,7 +306,16 @@ export const requestService = {
           await Promise.all(
             requestItem.assignedUnits.map(async (assignment) => {
               const unit = assignment.inventoryUnit;
-              await requestRepository.updateInventoryUnit(unit.id, { status: 'LOANED' }, { tx });
+              // RN-CTX-08 / AC-INV-11-5: al prestarse, la unidad queda ubicada en el
+              // ambiente de destino de la solicitud.
+              await requestRepository.updateInventoryUnit(
+                unit.id,
+                {
+                  status: 'LOANED',
+                  ...(request.environmentId ? { environmentId: request.environmentId } : {}),
+                },
+                { tx }
+              );
               await tx.requestItemUnit.update({
                 where: { id: assignment.id },
                 data: { loanedAt: new Date() },
