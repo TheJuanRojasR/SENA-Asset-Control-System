@@ -146,6 +146,7 @@ describe('Category endpoints', () => {
       const token = generateAccessToken(admin);
 
       const category = await prismaTest.category.create({ data: { name: 'Herramientas' } });
+      const otherCategory = await prismaTest.category.create({ data: { name: 'Electrónicos' } });
 
       const response = await request(app)
         .delete(`/api/categories/${category.id}`)
@@ -153,8 +154,21 @@ describe('Category endpoints', () => {
 
       expect(response.status).toBe(200);
 
+      // AC-CATEG-03-1: la baja puede ser física o lógica (decisión de implementación); el
+      // efecto exigido es que la categoría deje de aparecer y que las demás no se toquen.
       const deleted = await prismaTest.category.findUnique({ where: { id: category.id } });
-      expect(deleted.isDeleted).toBe(true);
+      expect(deleted === null || deleted.isDeleted === true).toBe(true);
+
+      const listResponse = await request(app)
+        .get('/api/categories')
+        .set('Authorization', `Bearer ${token}`);
+      expect(listResponse.status).toBe(200);
+      const names = listResponse.body.data.data.map((row) => row.name);
+      expect(names).not.toContain('Herramientas');
+      expect(names).toContain('Electrónicos');
+      const otherAfter = await prismaTest.category.findUnique({ where: { id: otherCategory.id } });
+      expect(otherAfter).not.toBeNull();
+      expect(otherAfter.isDeleted).toBe(false);
     });
 
     it('debe rechazar eliminar una categoría con ítems asociados', async () => {
