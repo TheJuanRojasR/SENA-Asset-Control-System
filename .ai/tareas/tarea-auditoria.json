@@ -1,0 +1,13 @@
+{
+  "id": "AUD-01",
+  "agente": "auditor",
+  "objetivo": "Auditar el estado del trabajo y de los PRs abiertos antes del sync",
+  "contexto": "El equipo trabaja con issues asignadas y PRs a develop. El auditor revisa los diez controles de .ai/agentes/auditor.prompt.md y publica el informe en el issue #81. No modifica nada.",
+  "archivos_afectados": [],
+  "criterios_aceptacion": [
+    "Cada control reportado como verde, hallazgo o 'no verificable' con su razón.",
+    "Cada hallazgo tiene severidad, evidencia, acción y dueño.",
+    "El informe termina con la acción concreta que debe ocurrir antes del próximo sync."
+  ],
+  "verificacion": "gh pr list --state open --json number,author,reviewDecision,createdAt"
+}
