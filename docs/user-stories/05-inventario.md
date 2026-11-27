@@ -8,7 +8,7 @@ Este módulo resuelve el **inventario físico**: la **unidad** identificada por 
 
 Lo escribe el **administrador** (`RN-CTX-05`): el alta de una unidad, el ensamblaje, el estado físico, la ubicación, la baja y el envío a mantenimiento son acciones administrativas. El instructor solicita, recoge y devuelve, y figura como tenedor de lo que se consulta.
 
-Si el módulo falla, un consumible vale siempre cero, no se sabe dónde quedó un equipo que salió hace un mes, una unidad averiada desaparece del inventario, se presta una unidad en trámite de baja o el conjunto que se entrega está incompleto. Estado hoy: **en ejecución parcial**: 49 de 67 criterios ejecutados y en `OK` en la rama `devJoseph-inventario` (`US-INV-01` a `US-INV-05`, `US-INV-07`, `US-INV-08` y `US-INV-09`). Quedan los bloques de estados físicos, ubicación, mantenimiento y alertas (US-INV-10…13).
+Si el módulo falla, un consumible vale siempre cero, no se sabe dónde quedó un equipo que salió hace un mes, una unidad averiada desaparece del inventario, se presta una unidad en trámite de baja o el conjunto que se entrega está incompleto. Estado hoy: **en ejecución parcial**: 58 de 67 criterios ejecutados y en `OK` en la rama `devJoseph-inventario`. Solo quedan US-INV-11 (ubicación) y US-INV-12 (mantenimiento).
 
 > **Frontera con los epics 03, 04, 06, 07, 08 y 12.** El **ciclo de la solicitud** —su creación, la aprobación, la verificación al empacar y la entrega— es el epic 06. La **disponibilidad por rango de fechas** es el epic 08. Los **préstamos y las devoluciones** —quién tiene cada unidad, la condición de retorno y la pérdida de una unidad prestada— son el epic 07. El **catálogo de ambientes** es el epic 03. El **alta del elemento**, su composición y su categoría son los epics 04 y 10. El **panel del administrador** es el epic 12. Este epic es dueño de **las unidades físicas y su estado**: ningún criterio de esas historias se repite acá.
 
@@ -1338,7 +1338,7 @@ Sin decisión todavía: los motivos de baja y su vocabulario, la reposición de 
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: 49 criterios corren con test y están en `OK`; quedan US-INV-10…13. Se migraron los seis estados físicos (`RN-INV-30`), la tenencia por unidad (`RN-INV-20`) y el ciclo de baja completo: donada inmediata; SENA en trámite con motivo/actor, confirmación administrativa y bloqueo de unidad y piezas mientras el trámite está abierto (`RN-INV-19/32/33`); pérdida declarada como única excepción (`RN-PRE-15`).
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: 58 criterios corren con test y están en `OK`; quedan US-INV-11 (ubicación) y US-INV-12 (mantenimiento). Se migraron los seis estados físicos (`RN-INV-30`), la tenencia por unidad (`RN-INV-20`) y el ciclo de baja completo. La verificación de estados aplicó `RN-INV-31`: una unidad solo se presta OPERATIVA; sus piezas sueltas se prestan si el conjunto padre está OPERATIVO, CON_FALLA o AVERIADO; EN_MANTENIMIENTO y DESCARGADO_AGOTADO no prestan nada (la pérdida es la excepción).
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
@@ -1391,13 +1391,13 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `AC-INV-09-5` | `RN-INV-32` | `OK` |
 | `AC-INV-09-6` | `RN-INV-33` | `OK` |
 | `AC-INV-09-7` | `RN-PRE-15` | `OK` |
-| `AC-INV-10-1` | `RN-INV-31` | Sin ejecutar |
-| `AC-INV-10-2` | `RN-INV-31` | Sin ejecutar |
-| `AC-INV-10-3` | `RN-INV-31` | Sin ejecutar |
-| `AC-INV-10-4` | `RN-INV-31` | Sin ejecutar |
-| `AC-INV-10-5` | `RN-INV-31` | Sin ejecutar |
-| `AC-INV-10-6` | `RN-INV-30` | Sin ejecutar |
-| `AC-INV-10-7` | `RN-INV-43` | Sin ejecutar |
+| `AC-INV-10-1` | `RN-INV-31` | `OK` |
+| `AC-INV-10-2` | `RN-INV-31` | `OK` |
+| `AC-INV-10-3` | `RN-INV-31` | `OK` |
+| `AC-INV-10-4` | `RN-INV-31` | `OK` |
+| `AC-INV-10-5` | `RN-INV-31` | `OK` |
+| `AC-INV-10-6` | `RN-INV-30` | `OK` |
+| `AC-INV-10-7` | `RN-INV-43` | `OK` |
 | `AC-INV-11-1` | `RN-CTX-08` | Sin ejecutar |
 | `AC-INV-11-2` | `RN-CTX-07` | Sin ejecutar |
 | `AC-INV-11-3` | `RN-CTX-07` | Sin ejecutar |
@@ -1407,8 +1407,8 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `AC-INV-12-2` | `RN-INV-42` | Sin ejecutar |
 | `AC-INV-12-3` | `RN-INV-42` | Sin ejecutar |
 | `AC-INV-12-4` | `RN-INV-43` | Sin ejecutar |
-| `AC-INV-13-1` | `RN-INV-44` | Sin ejecutar |
-| `AC-INV-13-2` | `RN-INV-44` | Sin ejecutar |
+| `AC-INV-13-1` | `RN-INV-44` | `OK` |
+| `AC-INV-13-2` | `RN-INV-44` | `OK` |
 
 | US | ACs | Regla de negocio | `Estándar` | `Derivada` | `OPEN` |
 |----|-----|------------------|------------|------------|--------|
@@ -1426,7 +1426,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-INV-13` | 2 | 2 | 0 | 0 | 0 |
 | **Total** | **67** | **58** | **9** | **0** | **0** |
 
-Totales: **12 historias y 67 criterios**, **49 `OK` y 18 sin ejecutar** (avance parcial en `devJoseph-inventario`). **58** se apoyan en una regla de negocio confirmada y **9** en un invariante técnico (`Estándar`: `AC-INV-01-1` a `AC-INV-01-4`, `AC-INV-02-3` a `AC-INV-02-5`, `AC-INV-03-1` y `AC-INV-04-5`). Ninguno está en `OPEN` ni es `Derivada`. Las citas de regla suman **60** sobre los **58** criterios que se apoyan en al menos una: `AC-INV-05-1` y `AC-INV-08-5` citan dos. `RN-INV-04` y `RN-INV-15` están `REFUTADAS`, no se implementan y no son origen de ningún criterio.
+Totales: **12 historias y 67 criterios**, **58 `OK` y 9 sin ejecutar** (avance parcial en `devJoseph-inventario`). **58** se apoyan en una regla de negocio confirmada y **9** en un invariante técnico (`Estándar`: `AC-INV-01-1` a `AC-INV-01-4`, `AC-INV-02-3` a `AC-INV-02-5`, `AC-INV-03-1` y `AC-INV-04-5`). Ninguno está en `OPEN` ni es `Derivada`. Las citas de regla suman **60** sobre los **58** criterios que se apoyan en al menos una: `AC-INV-05-1` y `AC-INV-08-5` citan dos. `RN-INV-04` y `RN-INV-15` están `REFUTADAS`, no se implementan y no son origen de ningún criterio.
 
 ## Anexo — Datos de prueba
 
