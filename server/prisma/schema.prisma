@@ -167,6 +167,11 @@ model InventoryUnit {
   parentUnitId  Int?
   status        UnitStatus    @default(AVAILABLE)
   physicalState PhysicalState @default(GOOD)
+  // RN-INV-33: trámite de baja abierto (no es estado físico). Bloquea la unidad y sus piezas.
+  disposalInProgress Boolean  @default(false)
+  // RN-PRE-15: unidad declarada perdida. Sale del inventario activo y no bloquea; sus
+  // piezas sueltas siguen prestables (excepción al bloqueo del trámite).
+  declaredLost       Boolean  @default(false)
   notes         String?       @db.Text
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
