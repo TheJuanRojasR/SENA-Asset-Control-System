@@ -53,6 +53,32 @@ export const inventoryController = {
     successResponse(res, result, result.message);
   }),
 
+  startDisposal: asyncHandler(async (req, res) => {
+    const result = await inventoryService.startDisposal(
+      Number(req.params.id),
+      req.user.userId,
+      req.body.reason
+    );
+    successResponse(res, result, result.message);
+  }),
+
+  confirmDisposal: asyncHandler(async (req, res) => {
+    const result = await inventoryService.confirmDisposal(
+      Number(req.params.id),
+      req.user.userId
+    );
+    successResponse(res, result, result.message);
+  }),
+
+  registerLoss: asyncHandler(async (req, res) => {
+    const result = await inventoryService.registerUnitLoss(
+      Number(req.params.id),
+      req.user.userId,
+      req.body.reason
+    );
+    successResponse(res, result, result.message);
+  }),
+
   restore: asyncHandler(async (req, res) => {
     const result = await inventoryService.restoreInventoryUnit(Number(req.params.id));
     successResponse(res, result, result.message);

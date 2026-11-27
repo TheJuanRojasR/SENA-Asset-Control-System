@@ -35,6 +35,13 @@ export const updateInventorySchema = z.object({
   ownership: z.enum(['SENA', 'DONATED']).optional(),
 });
 
+export const disposalSchema = z.object({
+  reason: z.string().trim().min(1, 'El motivo de la baja es obligatorio'),
+});
+
+export const disposalStartSchema = disposalSchema;
+export const lossSchema = disposalSchema;
+
 export const incompleteAssembliesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
