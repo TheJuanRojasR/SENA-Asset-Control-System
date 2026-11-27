@@ -9,8 +9,23 @@ const availabilityFilter = {
   disposalInProgress: false,
   declaredLost: false,
   OR: [
-    { parentUnitId: null },
-    { parentUnit: { OR: [{ disposalInProgress: false }, { declaredLost: true }] } },
+    // RN-INV-31: la unidad como unidad solo se presta si está OPERATIVA.
+    { parentUnitId: null, physicalState: 'OPERATIVO' },
+    // Pieza suelta: decide el estado del conjunto padre. CON_FALLA y AVERIADO prestan
+    // piezas; EN_MANTENIMIENTO y DESCARGADO_AGOTADO no prestan nada. La pérdida
+    // declarada es la excepción de RN-PRE-15.
+    {
+      parentUnitId: { not: null },
+      parentUnit: {
+        OR: [
+          { declaredLost: true },
+          {
+            disposalInProgress: false,
+            physicalState: { in: ['OPERATIVO', 'CON_FALLA', 'AVERIADO'] },
+          },
+        ],
+      },
+    },
   ],
 };
 
