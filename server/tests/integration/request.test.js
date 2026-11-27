@@ -655,7 +655,9 @@ describe('Request endpoints', () => {
         .delete(`/api/requests/${pending.id}`)
         .set('Authorization', authHeader(instructor));
 
-      expect(response.status).toBe(409);
+      // AC-SOL-07-1 / RN-SOL-05: el instructor solo cancela en PENDING; fuera de PENDING
+      // la especificación fija el rechazo con 403 y la reserva no cambia.
+      expect(response.status).toBe(403);
       expect(response.body.success).toBe(false);
     });
   });

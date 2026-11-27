@@ -352,11 +352,26 @@ export const requestService = {
         throw new AppError('Usuario no encontrado', HTTP_STATUS.NOT_FOUND, 'USER_NOT_FOUND');
       }
 
-      if (user.role !== 'ADMIN' && request.requesterId !== userId) {
+      const isAdmin = user.role === 'ADMIN';
+
+      if (!isAdmin && request.requesterId !== userId) {
         throw new AppError('No tiene permisos para cancelar esta solicitud', HTTP_STATUS.FORBIDDEN, 'FORBIDDEN');
       }
 
-      if (!['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {
+      // RN-SOL-05 / AC-SOL-07-1: el instructor cancela solo mientras la solicitud está
+      // PENDING. Fuera de PENDING el rechazo es 403 y no toca las asignaciones.
+      if (!isAdmin && request.status !== 'PENDING') {
+        throw new AppError(
+          'El instructor solo puede cancelar una solicitud pendiente',
+          HTTP_STATUS.FORBIDDEN,
+          'FORBIDDEN'
+        );
+      }
+
+      // RN-SOL-06 / RN-SOL-08 / AC-SOL-07-2: el administrador cancela mientras la entrega
+      // no se haya registrado (PENDING, APPROVED o PACKED). Una entrega ya registrada no
+      // se cancela.
+      if (isAdmin && !['PENDING', 'APPROVED', 'PACKED'].includes(request.status)) {
         throw new AppError(
           `No se puede cancelar una solicitud con estado '${request.status}'`,
           HTTP_STATUS.CONFLICT,
