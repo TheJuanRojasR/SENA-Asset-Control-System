@@ -20,8 +20,24 @@ export const createRequestSchema = z.object({
   ).min(1, 'Debe incluir al menos un ítem'),
 });
 
+// RN-SOL-03/04: el administrador puede reducir cantidades; la nota es obligatoria si el
+// total aprobado queda por debajo del solicitado.
+export const approveRequestSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        itemId: z.number().int().positive('El ítem es requerido'),
+        approvedQty: z.number().int().min(0, 'La cantidad aprobada no puede ser negativa'),
+      })
+    )
+    .optional(),
+  note: z.string().trim().optional(),
+});
+
 export const rejectRequestSchema = z.object({
-  rejectionReason: z.string().min(1, 'El motivo de rechazo es requerido'),
+  rejectionReason: z
+    .string({ required_error: 'El motivo de rechazo es obligatorio' })
+    .min(1, 'El motivo de rechazo es obligatorio'),
 });
 
 export const requestIdParamSchema = z.object({
