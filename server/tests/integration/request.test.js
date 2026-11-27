@@ -2,6 +2,7 @@ import request from 'supertest';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import requestRoutes from '../../src/routes/request.routes.js';
+import notificationRoutes from '../../src/routes/notification.routes.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { generateTokens } from '../../src/utils/jwt.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
@@ -10,6 +11,7 @@ function buildApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/requests', requestRoutes);
+  app.use('/api/notifications', notificationRoutes);
   app.use(errorHandler);
   return app;
 }
@@ -1145,6 +1147,312 @@ describe('Request endpoints', () => {
       expect(
         await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } })
       ).toBe(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-SOL-04 / US-SOL-05 — Modificar y empacar (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-SOL-04/05 — Modificar y empacar', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayOffset = (offset) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      return new Date(date.getTime() + offset * DAY_MS);
+    };
+    const dayString = (date) => new Date(date).toISOString().slice(0, 10);
+
+    const createRequestWith = async ({
+      lines,
+      user = instructor,
+      pickupOffset = 1,
+      estOffset = 3,
+    }) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(user))
+        .send({
+          items: lines,
+          pickupDate: dayOffset(pickupOffset),
+          estimatedDate: dayOffset(estOffset),
+        });
+
+    const modifyRequest = (requestId, body, user = instructor) =>
+      request(app)
+        .put(`/api/requests/${requestId}`)
+        .set('Authorization', authHeader(user))
+        .send(body);
+
+    const approve = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+
+    const pack = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+
+    const deliver = async (requestId) => {
+      await request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+      await request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+      return request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin));
+    };
+
+    const requestStatus = async (requestId) =>
+      (await prismaTest.request.findUnique({ where: { id: requestId } })).status;
+
+    const assignmentsFor = (requestId) =>
+      prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } });
+
+    const createCompound = async ({ name, components }) => {
+      const compound = await prismaTest.item.create({
+        data: { code: `CMP-${Date.now()}-${Math.random()}`, name, categoryId: category.id },
+      });
+      for (const component of components) {
+        await prismaTest.itemComponent.create({
+          data: {
+            parentItemId: compound.id,
+            childItemId: component.item.id,
+            isRequired: component.isRequired ?? true,
+            quantity: component.quantity ?? 1,
+          },
+        });
+      }
+      return compound;
+    };
+
+    const createUnit = (targetItem, serial, overrides = {}) =>
+      prismaTest.inventoryUnit.create({
+        data: {
+          itemId: targetItem.id,
+          serialNumber: serial,
+          status: 'AVAILABLE',
+          physicalState: 'OPERATIVO',
+          ...overrides,
+        },
+      });
+
+    it('AC-SOL-04-1 — El instructor modifica su pendiente y se ajusta la reserva', async () => {
+      await seedUnits(item.id, 3);
+      const created = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+        pickupOffset: 1,
+        estOffset: 2,
+      });
+      const requestId = created.body.data.request.id;
+      const newEstimate = dayOffset(5);
+
+      const response = await modifyRequest(requestId, {
+        items: [{ itemId: item.id, requestedQty: 2 }],
+        estimatedDate: newEstimate,
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('PENDING');
+      expect(response.body.data.request.requestItems[0].requestedQty).toBe(2);
+      expect(dayString(response.body.data.request.estimatedDate)).toBe(dayString(newEstimate));
+      expect(await assignmentsFor(requestId)).toBe(2);
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'RESERVED' },
+        })
+      ).toBe(2);
+    });
+
+    it('AC-SOL-04-2 — Si la modificación no cabe, se rechaza y todo queda como estaba', async () => {
+      await seedUnits(item.id, 2);
+      const competing = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+        user: otherInstructor,
+      });
+      expect(competing.status).toBe(201);
+
+      const created = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+      });
+      const requestId = created.body.data.request.id;
+      const before = await prismaTest.request.findUnique({ where: { id: requestId } });
+
+      const response = await modifyRequest(requestId, {
+        items: [{ itemId: item.id, requestedQty: 2 }],
+      });
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('INSUFFICIENT_STOCK');
+      const after = await prismaTest.request.findUnique({
+        where: { id: requestId },
+        include: { requestItems: true },
+      });
+      expect(after.requestItems[0].requestedQty).toBe(1);
+      expect(after.pickupDate.getTime()).toBe(before.pickupDate.getTime());
+      expect(after.estimatedDate.getTime()).toBe(before.estimatedDate.getTime());
+      expect(await assignmentsFor(requestId)).toBe(1);
+    });
+
+    it('AC-SOL-05-1 — Empacar deja la solicitud PACKED con las unidades concretas', async () => {
+      await seedUnits(item.id, 2);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+
+      const response = await pack(requestId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('PACKED');
+      const assigned = response.body.data.request.requestItems[0].assignedUnits;
+      expect(assigned).toHaveLength(2);
+      assigned.forEach((assignment) => {
+        expect(assignment.inventoryUnit.serialNumber).toBeTruthy();
+      });
+
+      const competing = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+        user: otherInstructor,
+      });
+      expect(competing.status).toBe(409);
+    });
+
+    it('AC-SOL-05-2 — Un compuesto con obligatorio ausente no se empaca', async () => {
+      const requiredPiece = await prismaTest.item.create({
+        data: { code: 'CMP-REQ', name: 'Pieza obligatoria', categoryId: category.id },
+      });
+      const compound = await createCompound({
+        name: 'Compuesto con obligatorio',
+        components: [{ item: requiredPiece }],
+      });
+      const parentUnit = await createUnit(compound, 'CMP-REQ-P-001');
+      const pieceUnit = await createUnit(requiredPiece, 'CMP-REQ-C-001');
+      await prismaTest.inventoryUnit.update({
+        where: { id: pieceUnit.id },
+        data: { parentUnitId: parentUnit.id },
+      });
+
+      // La pieza obligatoria sale prestada por separado.
+      const pieceRequest = await createRequestWith({
+        lines: [{ itemId: requiredPiece.id, requestedQty: 1 }],
+        user: otherInstructor,
+      });
+      expect(pieceRequest.status).toBe(201);
+      expect((await deliver(pieceRequest.body.data.request.id)).status).toBe(200);
+
+      const created = await createRequestWith({ lines: [{ itemId: compound.id, requestedQty: 1 }] });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+      const before = await assignmentsFor(requestId);
+
+      const response = await pack(requestId);
+      expect(response.status).toBe(409);
+      expect(await requestStatus(requestId)).toBe('APPROVED');
+      expect(await assignmentsFor(requestId)).toBe(before);
+    });
+
+    it('AC-SOL-05-3 — Si falta un opcional, se empaca y se documenta', async () => {
+      const requiredPiece = await prismaTest.item.create({
+        data: { code: 'CMP-RO', name: 'Pieza requerida', categoryId: category.id },
+      });
+      const optionalPiece = await prismaTest.item.create({
+        data: { code: 'CMP-OP', name: 'Accesorio opcional', categoryId: category.id },
+      });
+      const compound = await createCompound({
+        name: 'Compuesto con opcional',
+        components: [
+          { item: requiredPiece },
+          { item: optionalPiece, isRequired: false },
+        ],
+      });
+      const parentUnit = await createUnit(compound, 'CMP-RO-P-001');
+      const requiredUnit = await createUnit(requiredPiece, 'CMP-RO-C-001');
+      await prismaTest.inventoryUnit.update({
+        where: { id: requiredUnit.id },
+        data: { parentUnitId: parentUnit.id },
+      });
+
+      const created = await createRequestWith({ lines: [{ itemId: compound.id, requestedQty: 1 }] });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+
+      const response = await pack(requestId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('PACKED');
+      expect(response.body.data.request.packingNotes).toContain('Accesorio opcional');
+    });
+
+    it('AC-SOL-05-4 — Si ya no hay stock para el rango, empacar falla sin avanzar', async () => {
+      await seedUnits(item.id, 2);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+      const units = await prismaTest.inventoryUnit.findMany({ where: { itemId: item.id } });
+      await prismaTest.inventoryUnit.update({
+        where: { id: units[0].id },
+        data: { status: 'LOANED' },
+      });
+      const before = await assignmentsFor(requestId);
+
+      const response = await pack(requestId);
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('INSUFFICIENT_STOCK');
+      expect(await requestStatus(requestId)).toBe('APPROVED');
+      expect(await assignmentsFor(requestId)).toBe(before);
+    });
+
+    it('AC-SOL-05-5 — Empacar no descuenta stock de consumibles', async () => {
+      const consumable = await prismaTest.item.create({
+        data: {
+          code: 'CON-EMP',
+          name: 'Consumible para empacar',
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'LITRO',
+          stock: 10,
+        },
+      });
+      const created = await createRequestWith({
+        lines: [{ itemId: consumable.id, requestedQty: 2 }],
+      });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+
+      const response = await pack(requestId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('PACKED');
+      const stored = await prismaTest.item.findUnique({ where: { id: consumable.id } });
+      expect(stored.stock).toBe(10);
+    });
+
+    it('AC-SOL-05-6 — Empacar deja exactamente un aviso de listo para retirar; aprobar no', async () => {
+      await seedUnits(this ? item.id : item.id, 2);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+
+      // Aprobar deja aviso de aprobación, no de retiro.
+      const approvalNotices = await prismaTest.notification.findMany({
+        where: { requestId },
+      });
+      expect(approvalNotices.some((notice) => notice.type === 'REQUEST_APPROVED')).toBe(true);
+      expect(approvalNotices.some((notice) => notice.type === 'PICKUP_READY')).toBe(false);
+
+      await pack(requestId);
+      const pickupNotices = await prismaTest.notification.findMany({
+        where: { requestId, type: 'PICKUP_READY' },
+      });
+      expect(pickupNotices).toHaveLength(1);
+
+      const list = await request(app)
+        .get('/api/notifications')
+        .set('Authorization', authHeader(instructor));
+      expect(list.status).toBe(200);
+      expect(
+        list.body.data.data.some(
+          (notice) => notice.requestId === requestId && notice.type === 'PICKUP_READY'
+        )
+      ).toBe(true);
     });
   });
 });
