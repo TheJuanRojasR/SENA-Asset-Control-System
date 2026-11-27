@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { prisma } from '../config/database.js';
+import { notificationChannelService } from './notificationChannel.service.js';
 
 const CRON_EXPRESSION = process.env.RESERVATION_CLEANUP_CRON || '0 * * * *';
 const BOGOTA_TIME_ZONE = 'America/Bogota';
@@ -117,6 +118,7 @@ export const reservationCleanupService = {
         pickupDate: { not: null },
       },
       include: {
+        requester: { select: { id: true, email: true, fullName: true, phone: true } },
         requestItems: {
           include: {
             assignedUnits: true,
@@ -141,6 +143,21 @@ export const reservationCleanupService = {
               status: 'CANCELLED',
               cancellationCause: 'EXPIRED',
             },
+          });
+
+          // RN-NOT-01 / AC-SOL-09-5: el vencimiento deja aviso distinguible del manual.
+          const expirationNotice = await tx.notification.create({
+            data: {
+              userId: request.requesterId,
+              requestId: request.id,
+              type: 'REQUEST_EXPIRED',
+              title: 'Solicitud vencida',
+              message: `Tu solicitud ${request.code} venció porque no se retiró dentro del plazo.`,
+            },
+          });
+          await notificationChannelService.sendNotice({
+            notification: expirationNotice,
+            recipient: request.requester,
           });
         });
         cancelledRequests += 1;
