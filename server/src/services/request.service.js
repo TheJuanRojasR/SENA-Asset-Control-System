@@ -7,7 +7,7 @@ import { HTTP_STATUS } from '../constants/httpStatus.js';
 
 export const requestService = {
   async createRequest(requesterId, data) {
-    const { environmentId, shift, estimatedDate, observations, items } = data;
+    const { environmentId, shift, pickupDate, estimatedDate, observations, items } = data;
 
     if (!items || items.length === 0) {
       throw new AppError('Debe incluir al menos un ítem', HTTP_STATUS.BAD_REQUEST, 'EMPTY_ITEMS');
@@ -25,6 +25,8 @@ export const requestService = {
     if (uniqueItemIds.size !== itemIds.length) {
       throw new AppError('No puede repetir ítems en la solicitud', HTTP_STATUS.BAD_REQUEST, 'DUPLICATED_ITEMS');
     }
+
+    const range = buildReservationRange({ pickupDate, estimatedDate });
 
     return prisma.$transaction(async (tx) => {
       const itemById = new Map();
@@ -49,7 +51,7 @@ export const requestService = {
         // RN-INV-11: el consumible se controla por cantidad, no por unidades físicas.
         const available = item.isConsumable
           ? item.stock ?? 0
-          : await requestRepository.countAvailableUnitsByItemId(itemId, { tx });
+          : await countAvailableUnitsForRange(itemId, range, tx);
         if (available < requestedQty) {
           throw new AppError(
             `Stock insuficiente para ${item.name}. Disponible: ${available}, solicitado: ${requestedQty}`,
@@ -67,7 +69,8 @@ export const requestService = {
           requesterId,
           environmentId,
           shift,
-          estimatedDate: estimatedDate ? new Date(estimatedDate) : undefined,
+          pickupDate: range.pickupDate,
+          estimatedDate: range.estimatedDate,
           observations,
           status: 'PENDING',
           requestItems: {
@@ -90,7 +93,7 @@ export const requestService = {
           requestItem.itemId,
           requestItem.requestedQty,
           tx,
-          { actorId: requesterId, requestId: request.id }
+          { actorId: requesterId, requestId: request.id, range }
         );
       }
 
@@ -237,6 +240,7 @@ export const requestService = {
           await assignUnitsToRequestItem(requestItem.id, requestItem.itemId, missing, tx, {
             actorId: adminId,
             requestId: id,
+            range: rangeFromRequest(request),
           });
         }
       }
@@ -468,24 +472,27 @@ export const requestService = {
  * (aunque el ensamblaje esté incompleto; la UI muestra el faltante).
  * Ítems simples: reserva unidades directas.
  */
-async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx, { actorId, requestId } = {}) {
+/**
+ * RN-SOL-01 / RN-NEG-01/02: reserva unidades disponibles para el rango de la solicitud.
+ * Una unidad reservada para un rango que NO se solapa cuenta como disponible y se le agrega
+ * la nueva reserva; una prestada (LOANED) no está disponible para ningún rango.
+ */
+async function assignUnitsToRequestItem(
+  requestItemId,
+  itemId,
+  qty,
+  tx,
+  { actorId, requestId, range } = {}
+) {
   if (qty <= 0) return;
 
   const components = await itemRepository.findComponents(itemId);
 
   if (components.length > 0) {
-    const parentUnits = await tx.inventoryUnit.findMany({
-      where: { itemId, status: 'AVAILABLE' },
-      take: qty,
-      include: {
-        childUnits: {
-          where: { status: 'AVAILABLE' },
-        },
-      },
-      orderBy: { id: 'asc' },
-    });
+    const candidates = await requestRepository.findUnitsForRange(itemId, { tx });
+    const freeParents = candidates.filter((unit) => unitIsFreeForRange(unit, range)).slice(0, qty);
 
-    if (parentUnits.length < qty) {
+    if (freeParents.length < qty) {
       throw new AppError(
         `Stock insuficiente de unidades para el ítem ${itemId}`,
         HTTP_STATUS.CONFLICT,
@@ -493,23 +500,22 @@ async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx, { actorI
       );
     }
 
-    for (const parentUnit of parentUnits) {
-      await requestRepository.updateInventoryUnit(parentUnit.id, { status: 'RESERVED' }, { tx });
-      await requestRepository.createRequestItemUnit(
-        { requestItemId, inventoryUnitId: parentUnit.id },
-        { tx }
-      );
+    for (const parentUnit of freeParents) {
+      await reserveUnit(parentUnit, requestItemId, {
+        tx,
+        actorId,
+        requestId,
+        itemId,
+      });
 
-      await createReservationMovement({ itemId, unit: parentUnit, actorId, requestId }, tx);
-
-      for (const childUnit of parentUnit.childUnits) {
-        await requestRepository.updateInventoryUnit(childUnit.id, { status: 'RESERVED' }, { tx });
+      for (const child of parentUnit.childUnits || []) {
+        await requestRepository.updateInventoryUnit(child.id, { status: 'RESERVED' }, { tx });
         await requestRepository.createRequestItemUnit(
-          { requestItemId, inventoryUnitId: childUnit.id },
+          { requestItemId, inventoryUnitId: child.id },
           { tx }
         );
         await createReservationMovement(
-          { itemId: childUnit.itemId, unit: childUnit, actorId, requestId },
+          { itemId, unit: child, actorId, requestId },
           tx
         );
       }
@@ -518,9 +524,10 @@ async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx, { actorI
     return;
   }
 
-  const availableUnits = await requestRepository.findAvailableUnitsByItemId(itemId, qty, { tx });
+  const candidates = await requestRepository.findUnitsForRange(itemId, { tx });
+  const freeUnits = candidates.filter((unit) => unitIsFreeForRange(unit, range)).slice(0, qty);
 
-  if (availableUnits.length < qty) {
+  if (freeUnits.length < qty) {
     throw new AppError(
       `Stock insuficiente para el ítem ${itemId}`,
       HTTP_STATUS.CONFLICT,
@@ -528,38 +535,25 @@ async function assignUnitsToRequestItem(requestItemId, itemId, qty, tx, { actorI
     );
   }
 
-  for (const unit of availableUnits) {
-    await requestRepository.updateInventoryUnit(unit.id, { status: 'RESERVED' }, { tx });
-    await requestRepository.createRequestItemUnit(
-      { requestItemId, inventoryUnitId: unit.id },
-      { tx }
-    );
-    await createReservationMovement({ itemId, unit, actorId, requestId }, tx);
+  for (const unit of freeUnits) {
+    await reserveUnit(unit, requestItemId, { tx, actorId, requestId, itemId });
   }
 }
 
-/**
- * RN-MOV-01: crear una solicitud deja un movimiento de reserva por unidad reservada, con
- * el actor que la creó y la solicitud asociada.
- */
-async function createReservationMovement({ itemId, unit, actorId, requestId }, tx) {
-  if (!requestId) return;
-  await requestRepository.createMovement(
-    {
-      type: 'RESERVATION',
-      itemId,
-      inventoryUnitId: unit.id,
-      quantity: 1,
-      responsibleId: actorId ?? null,
-      requestId,
-    },
+async function reserveUnit(unit, requestItemId, { tx, actorId, requestId, itemId }) {
+  if (unit.status === 'AVAILABLE') {
+    await requestRepository.updateInventoryUnit(unit.id, { status: 'RESERVED' }, { tx });
+  }
+  await requestRepository.createRequestItemUnit(
+    { requestItemId, inventoryUnitId: unit.id },
     { tx }
   );
+  await createReservationMovement({ itemId, unit, actorId, requestId }, tx);
 }
 
 /**
- * Libera todas las unidades asignadas a una solicitud (RESERVED → AVAILABLE)
- * y elimina las asignaciones. Idempotente: sin asignaciones no hace nada.
+ * Libera las asignaciones de una solicitud. Una unidad vuelve a AVAILABLE solo si no le
+ * quedan otras reservas activas (RN-NEG-01: puede estar reservada en otro rango).
  */
 async function releaseAssignedUnits(requestId, tx) {
   const requestItems = await requestRepository.findRequestItemsByRequestId(requestId, { tx });
@@ -568,14 +562,28 @@ async function releaseAssignedUnits(requestId, tx) {
   if (assignedUnits.length === 0) return;
 
   const unitIds = assignedUnits.map((assignment) => assignment.inventoryUnitId);
-  await tx.inventoryUnit.updateMany({
-    where: { id: { in: unitIds } },
-    data: { status: 'AVAILABLE' },
-  });
 
   await tx.requestItemUnit.deleteMany({
     where: { id: { in: assignedUnits.map((assignment) => assignment.id) } },
   });
+
+  const remaining = await tx.requestItemUnit.findMany({
+    where: {
+      inventoryUnitId: { in: unitIds },
+      returnedAt: null,
+      lostAt: null,
+    },
+    select: { inventoryUnitId: true },
+  });
+  const stillReserved = new Set(remaining.map((row) => row.inventoryUnitId));
+
+  for (const unitId of unitIds) {
+    if (stillReserved.has(unitId)) continue;
+    const unit = await tx.inventoryUnit.findUnique({ where: { id: unitId } });
+    if (unit && unit.status === 'RESERVED') {
+      await tx.inventoryUnit.update({ where: { id: unitId }, data: { status: 'AVAILABLE' } });
+    }
+  }
 }
 
 /**
@@ -596,4 +604,112 @@ async function generateRequestCode({ tx } = {}) {
   const count = await requestRepository.countByCodePrefix(prefix, { tx });
   const next = count + 1;
   return `${prefix}${String(next).padStart(3, '0')}`;
+}
+
+async function createReservationMovement({ itemId, unit, actorId, requestId }, tx) {
+  if (!requestId) return;
+  await requestRepository.createMovement(
+    {
+      type: 'RESERVATION',
+      itemId,
+      inventoryUnitId: unit.id,
+      quantity: 1,
+      responsibleId: actorId ?? null,
+      requestId,
+    },
+    { tx }
+  );
+}
+
+const ACTIVE_RESERVATION_STATUSES = new Set(['PENDING', 'APPROVED', 'PACKED']);
+
+const toUtcDay = (value) => {
+  const date = new Date(value);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+};
+
+/**
+ * RN-SOL-01: la fecha de retiro más temprana es hoy y por defecto es mañana; la fecha
+ * estimada no puede ser anterior a la de retiro. El rango es de días de calendario.
+ */
+function buildReservationRange({ pickupDate, estimatedDate }) {
+  const todayMs = toUtcDay(new Date());
+  const defaultPickupMs = todayMs + 24 * 60 * 60 * 1000;
+  const pickupMs = pickupDate ? toUtcDay(pickupDate) : defaultPickupMs;
+
+  if (pickupMs < todayMs && pickupDate) {
+    throw new AppError(
+      'La fecha de retiro no puede ser anterior a hoy',
+      HTTP_STATUS.BAD_REQUEST,
+      'INVALID_PICKUP_DATE'
+    );
+  }
+
+  const estimatedMs = estimatedDate ? toUtcDay(estimatedDate) : pickupMs;
+  if (estimatedMs < pickupMs) {
+    throw new AppError(
+      'La fecha estimada de devolución no puede ser anterior a la de retiro',
+      HTTP_STATUS.BAD_REQUEST,
+      'INVALID_RETURN_DATE'
+    );
+  }
+
+  return {
+    pickupDate: new Date(pickupMs),
+    estimatedDate: new Date(estimatedMs),
+    startMs: pickupMs,
+    endMs: estimatedMs,
+  };
+}
+
+function rangeFromRequest(request) {
+  const pickupMs = toUtcDay(request.pickupDate ?? request.requestDate);
+  const estimatedMs = toUtcDay(request.estimatedDate ?? request.pickupDate ?? request.requestDate);
+  return {
+    pickupDate: new Date(pickupMs),
+    estimatedDate: new Date(estimatedMs),
+    startMs: pickupMs,
+    endMs: estimatedMs,
+  };
+}
+
+function unitHasOverlappingReservation(unit, range) {
+  return (unit.requestItemUnits || []).some((assignment) => {
+    const request = assignment.requestItem?.request;
+    if (!request) return false;
+    if (!ACTIVE_RESERVATION_STATUSES.has(request.status)) return false;
+    const startMs = toUtcDay(request.pickupDate ?? request.requestDate);
+    const endMs = toUtcDay(request.estimatedDate ?? request.pickupDate ?? request.requestDate);
+    return startMs <= range.endMs && endMs >= range.startMs;
+  });
+}
+
+/**
+ * RN-INV-31: la unidad como unidad solo se presta OPERATIVA; una pieza se presta según el
+ * estado del conjunto padre. RN-INV-33 bloquea unidades en trámite; RN-PRE-15 exceptúa las
+ * piezas de un conjunto perdido.
+ */
+function unitIsFreeForRange(unit, range) {
+  if (!range) return unit.status === 'AVAILABLE';
+  if (unit.status !== 'AVAILABLE' && unit.status !== 'RESERVED') return false;
+  if (unit.disposalInProgress || unit.declaredLost) return false;
+
+  if (unit.parentUnitId) {
+    const parent = unit.parentUnit;
+    if (!parent) return false;
+    if (!parent.declaredLost) {
+      if (parent.disposalInProgress) return false;
+      if (parent.status === 'LOANED') return false;
+      if (!['OPERATIVO', 'CON_FALLA', 'AVERIADO'].includes(parent.physicalState)) return false;
+    }
+  } else if (unit.physicalState !== 'OPERATIVO') {
+    return false;
+  }
+
+  return !unitHasOverlappingReservation(unit, range);
+}
+
+async function countAvailableUnitsForRange(itemId, range, tx) {
+  const units = await requestRepository.findUnitsForRange(itemId, { tx });
+  return units.filter((unit) => unitIsFreeForRange(unit, range)).length;
 }
