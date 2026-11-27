@@ -20,7 +20,7 @@ const catalogItemSelect = {
 
 const reservationSelect = {
   requestItemUnits: {
-    where: { returnedAt: null },
+    where: { returnedAt: null, releasedAt: null },
     select: {
       requestItem: {
         select: {

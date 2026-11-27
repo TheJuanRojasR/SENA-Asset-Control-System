@@ -18,6 +18,12 @@ enum Shift {
   NIGHT
 }
 
+// RN-SOL-07/10: cancelación manual o por vencimiento del plazo de retiro.
+enum CancellationCause {
+  MANUAL
+  EXPIRED
+}
+
 enum RequestStatus {
   PENDING
   APPROVED
@@ -268,6 +274,8 @@ model Request {
   observations    String?       @db.Text
   approvedById    Int?
   approvedAt      DateTime?
+  // RN-SOL-10 / AC-SOL-08-3: causa de la cancelación (manual o vencimiento).
+  cancellationCause CancellationCause? @map("cancellation_cause")
   rejectionReason String?       @db.Text
   rejectedById    Int?
   rejectedAt      DateTime?
@@ -329,6 +337,9 @@ model RequestItemUnit {
   returnDamageState     ReturnDamageState?
   returnDescription     String?         @db.Text
   // RN-PRE-15 / RN-PRE-16: pérdida declarada de una unidad prestada (distinta de no devuelta).
+  // RN-SOL-08 / RN-PRE-02: la cancelación no borra la traza de qué unidades
+  // estuvieron asignadas; se marcan liberadas en vez de eliminarlas.
+  releasedAt            DateTime?
   lostAt                DateTime?
   lostById              Int?
   lostReason            String?         @db.Text

@@ -73,7 +73,7 @@ router.put(
 );
 router.delete(
   '/:id',
-  authorize('INSTRUCTOR'),
+  authorize('ADMIN', 'INSTRUCTOR'),
   validateRequest(requestIdParamSchema),
   requestController.cancel
 );
