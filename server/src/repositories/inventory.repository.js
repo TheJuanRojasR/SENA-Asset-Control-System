@@ -226,7 +226,8 @@ export const inventoryRepository = {
 };
 
 function buildWhere(filters) {
-  const where = {};
+  // AC-INV-09-7: una unidad declarada perdida sale del inventario activo.
+  const where = filters.includeLost ? {} : { declaredLost: false };
 
   if (filters.itemId) where.itemId = filters.itemId;
   if (filters.environmentId) where.environmentId = filters.environmentId;

@@ -391,7 +391,7 @@ export const inventoryService = {
           );
         }
 
-        if (child.status !== 'AVAILABLE') {
+        if (child.status !== 'AVAILABLE' || child.disposalInProgress || child.declaredLost) {
           throw new AppError(
             `La unidad ${child.serialNumber} debe estar disponible para ensamblar`,
             HTTP_STATUS.CONFLICT,

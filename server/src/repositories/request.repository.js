@@ -1,5 +1,19 @@
 import { prisma } from '../config/database.js';
 
+/**
+ * RN-INV-33 / RN-PRE-15: una unidad en trámite de baja no se ofrece, ni sus piezas sueltas;
+ * la única excepción es una unidad (o conjunto) declarado perdido, que deja sus piezas
+ * prestables.
+ */
+const availabilityFilter = {
+  disposalInProgress: false,
+  declaredLost: false,
+  OR: [
+    { parentUnitId: null },
+    { parentUnit: { OR: [{ disposalInProgress: false }, { declaredLost: true }] } },
+  ],
+};
+
 const userSelect = {
   id: true,
   email: true,
@@ -180,13 +194,13 @@ export const requestRepository = {
 
   async countAvailableUnitsByItemId(itemId, { tx } = {}) {
     return (tx || prisma).inventoryUnit.count({
-      where: { itemId, status: 'AVAILABLE' },
+      where: { itemId, status: 'AVAILABLE', ...availabilityFilter },
     });
   },
 
   async findAvailableUnitsByItemId(itemId, limit, { tx } = {}) {
     return (tx || prisma).inventoryUnit.findMany({
-      where: { itemId, status: 'AVAILABLE' },
+      where: { itemId, status: 'AVAILABLE', ...availabilityFilter },
       take: limit,
       orderBy: { id: 'asc' },
     });
