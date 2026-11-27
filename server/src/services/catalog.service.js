@@ -64,11 +64,15 @@ const isLostOrDisposed = (unit) =>
 const isPieceBlockedByParent = (unit, range) => {
   const parent = unit.parentUnit;
   if (!parent) return true;
+  // RN-PRE-15: si el conjunto fue declarado perdido, sus piezas siguen prestables.
   if (parent.declaredLost) return false;
   if (parent.disposalInProgress) return true;
   if (parent.status === 'DISPOSED' || parent.physicalState === 'DADO_DE_BAJA') return true;
   if (parent.status === 'LOANED') return true;
   if (parent.status === 'RESERVED' && hasOverlappingReservation(parent, range)) return true;
+  // RN-INV-31: un padre OPERATIVO, CON_FALLA o AVERIADO presta sus piezas sueltas
+  // (RN-INV-08); EN_MANTENIMIENTO, DESCARGADO_AGOTADO y DADO_DE_BAJA no prestan nada.
+  if (!['OPERATIVO', 'CON_FALLA', 'AVERIADO'].includes(parent.physicalState)) return true;
   return false;
 };
 
