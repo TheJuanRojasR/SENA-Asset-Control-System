@@ -8,6 +8,8 @@ export const createRequestSchema = z.object({
   shift: z.enum(shiftValues, {
     errorMap: () => ({ message: 'Jornada inválida' }),
   }).optional(),
+  // RN-SOL-01: fecha de retiro dentro del rango; el default es el día siguiente.
+  pickupDate: z.coerce.date().optional(),
   estimatedDate: z.coerce.date().optional(),
   observations: z.string().optional(),
   items: z.array(

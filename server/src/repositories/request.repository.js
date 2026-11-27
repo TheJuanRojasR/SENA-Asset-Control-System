@@ -52,6 +52,7 @@ export const requestSelect = {
   shift: true,
   status: true,
   requestDate: true,
+  pickupDate: true,
   estimatedDate: true,
   observations: true,
   approvedById: true,
@@ -204,6 +205,53 @@ export const requestRepository = {
   async createMovement(data, { tx } = {}) {
     return (tx || prisma).movement.create({
       data,
+    });
+  },
+
+  /**
+   * RN-NEG-01/02: unidades candidatas para un ítem con sus reservas activas y su rango, para
+   * decidir disponibilidad por solapamiento de fechas en vez de por estado global.
+   */
+  async findUnitsForRange(itemId, { tx } = {}) {
+    return (tx || prisma).inventoryUnit.findMany({
+      where: {
+        itemId,
+        status: { in: ['AVAILABLE', 'RESERVED'] },
+        disposalInProgress: false,
+        declaredLost: false,
+      },
+      include: {
+        parentUnit: {
+          select: {
+            id: true,
+            status: true,
+            physicalState: true,
+            disposalInProgress: true,
+            declaredLost: true,
+          },
+        },
+        childUnits: { where: { status: 'AVAILABLE' }, select: { id: true, itemId: true } },
+        requestItemUnits: {
+          where: { returnedAt: null, lostAt: null },
+          select: {
+            requestItem: {
+              select: {
+                request: {
+                  select: {
+                    id: true,
+                    status: true,
+                    pickupDate: true,
+                    requestDate: true,
+                    pickupDate: true,
+                    estimatedDate: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
     });
   },
 

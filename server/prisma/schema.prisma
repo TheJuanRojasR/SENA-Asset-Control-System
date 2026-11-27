@@ -256,6 +256,8 @@ model Request {
   shift           String?       @db.VarChar(50)
   status          RequestStatus @default(PENDING)
   requestDate     DateTime      @default(now())
+  // RN-SOL-01 / RN-NEG-04: fecha de retiro y rango de reserva [pickupDate, estimatedDate].
+  pickupDate      DateTime?
   estimatedDate   DateTime?
   observations    String?       @db.Text
   approvedById    Int?
