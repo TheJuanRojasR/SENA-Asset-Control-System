@@ -1455,6 +1455,203 @@ describe('Request endpoints', () => {
       ).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------------
+  // US-SOL-06 — Entregar (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-SOL-06 — Entregar', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayOffset = (offset) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      return new Date(date.getTime() + offset * DAY_MS);
+    };
+
+    const createRequestWith = async ({ lines, user = instructor }) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(user))
+        .send({
+          items: lines,
+          pickupDate: dayOffset(1),
+          estimatedDate: dayOffset(3),
+        });
+
+    const approve = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+
+    const pack = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/pack`)
+        .set('Authorization', authHeader(admin));
+
+    const deliver = (requestId, body) =>
+      request(app)
+        .put(`/api/requests/${requestId}/deliver`)
+        .set('Authorization', authHeader(admin))
+        .send(body || {});
+
+    const prepare = async (qty) => {
+      await seedUnits(item.id, qty);
+      const created = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: qty }],
+      });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+      await pack(requestId);
+      return requestId;
+    };
+
+    it('AC-SOL-06-1 — Entregar todo lo aprobado lleva la solicitud a DELIVERED', async () => {
+      const requestId = await prepare(2);
+
+      const response = await deliver(requestId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('DELIVERED');
+      expect(response.body.data.request.deliveredAt).not.toBeNull();
+
+      const assignments = await prismaTest.requestItemUnit.findMany({
+        where: { requestItem: { requestId } },
+      });
+      assignments.forEach((assignment) => expect(assignment.loanedAt).not.toBeNull());
+      const loanedUnits = await prismaTest.inventoryUnit.count({
+        where: { itemId: item.id, status: 'LOANED' },
+      });
+      expect(loanedUnits).toBe(2);
+    });
+
+    it('AC-SOL-06-2 — Solo se entrega desde PACKED o PARTIALLY_DELIVERED y no se repite', async () => {
+      // PENDING.
+      await seedUnits(item.id, 1);
+      const pending = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+      });
+      const pendingId = pending.body.data.request.id;
+      expect((await deliver(pendingId)).status).toBe(409);
+      expect((await prismaTest.request.findUnique({ where: { id: pendingId } })).status).toBe(
+        'PENDING'
+      );
+
+      // APPROVED sin empacar.
+      await approve(pendingId);
+      expect((await deliver(pendingId)).status).toBe(409);
+      expect((await prismaTest.request.findUnique({ where: { id: pendingId } })).status).toBe(
+        'APPROVED'
+      );
+      expect(
+        await prismaTest.requestItemUnit.count({
+          where: { requestItem: { requestId: pendingId }, loanedAt: { not: null } },
+        })
+      ).toBe(0);
+
+      // Repetida sobre DELIVERED.
+      await pack(pendingId);
+      expect((await deliver(pendingId)).status).toBe(200);
+      const first = await prismaTest.request.findUnique({ where: { id: pendingId } });
+      expect((await deliver(pendingId)).status).toBe(409);
+      const second = await prismaTest.request.findUnique({ where: { id: pendingId } });
+      expect(second.deliveredAt.getTime()).toBe(first.deliveredAt.getTime());
+    });
+
+    it('AC-SOL-06-3 — Queda registrado quién tiene cada unidad y desde cuándo', async () => {
+      const requestId = await prepare(2);
+      const delivered = await deliver(requestId);
+      expect(delivered.status).toBe(200);
+      const deliveredAt = new Date(delivered.body.data.request.deliveredAt).getTime();
+
+      const assignments = await prismaTest.requestItemUnit.findMany({
+        where: { requestItem: { requestId } },
+        include: { inventoryUnit: true },
+      });
+      assignments.forEach((assignment) => {
+        expect(assignment.loanedAt).not.toBeNull();
+        expect(Math.abs(assignment.loanedAt.getTime() - deliveredAt)).toBeLessThan(2000);
+        expect(assignment.inventoryUnit.status).toBe('LOANED');
+      });
+
+      const query = await request(app)
+        .get(`/api/requests/${requestId}`)
+        .set('Authorization', authHeader(instructor));
+      expect(query.status).toBe(200);
+      expect(query.body.data.request.requester.id).toBe(instructor.id);
+      const assigned = query.body.data.request.requestItems[0].assignedUnits;
+      expect(assigned.every((assignment) => assignment.loanedAt !== null)).toBe(true);
+    });
+
+    it('AC-SOL-06-4 — La entrega descuenta el stock de consumibles', async () => {
+      const consumable = await prismaTest.item.create({
+        data: {
+          code: 'CON-ENT',
+          name: 'Consumible entregado',
+          categoryId: category.id,
+          isConsumable: true,
+          ownership: 'DONATED',
+          unit: 'LITRO',
+          stock: 10,
+        },
+      });
+      const created = await createRequestWith({
+        lines: [{ itemId: consumable.id, requestedQty: 2 }],
+      });
+      const requestId = created.body.data.request.id;
+      await approve(requestId);
+      await pack(requestId);
+
+      const response = await deliver(requestId);
+      expect(response.status).toBe(200);
+      const stored = await prismaTest.item.findUnique({ where: { id: consumable.id } });
+      expect(stored.stock).toBe(8);
+      const requestItem = await prismaTest.requestItem.findFirst({ where: { requestId } });
+      expect(requestItem.deliveredQty).toBe(2);
+      const movement = await prismaTest.movement.findFirst({
+        where: { requestId, type: 'LOAN', itemId: consumable.id },
+      });
+      expect(movement.quantity).toBe(2);
+      expect(await prismaTest.inventoryUnit.count({ where: { itemId: consumable.id } })).toBe(0);
+    });
+
+    it('AC-SOL-06-5 — Una entrega parcial deja PARTIALLY_DELIVERED', async () => {
+      const requestId = await prepare(3);
+
+      const response = await deliver(requestId, {
+        items: [{ itemId: item.id, deliveredQty: 2 }],
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('PARTIALLY_DELIVERED');
+      expect(response.body.data.request.status).not.toBe('DELIVERED');
+
+      const assignments = await prismaTest.requestItemUnit.findMany({
+        where: { requestItem: { requestId } },
+        include: { inventoryUnit: true },
+      });
+      const deliveredAssignments = assignments.filter((assignment) => assignment.loanedAt);
+      const pendingAssignments = assignments.filter((assignment) => !assignment.loanedAt);
+      expect(deliveredAssignments).toHaveLength(2);
+      expect(pendingAssignments).toHaveLength(1);
+      expect(pendingAssignments[0].inventoryUnit.status).toBe('RESERVED');
+      expect(pendingAssignments[0].inventoryUnitId).toBeTruthy();
+    });
+
+    it('AC-SOL-06-6 — La entrega de lo que falta lleva a DELIVERED', async () => {
+      const requestId = await prepare(3);
+      await deliver(requestId, { items: [{ itemId: item.id, deliveredQty: 2 }] });
+
+      const response = await deliver(requestId, {
+        items: [{ itemId: item.id, deliveredQty: 3 }],
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('DELIVERED');
+      expect(response.body.data.request.status).not.toBe('COMPLETED');
+
+      const assignments = await prismaTest.requestItemUnit.findMany({
+        where: { requestItem: { requestId } },
+      });
+      expect(assignments).toHaveLength(3);
+      assignments.forEach((assignment) => expect(assignment.loanedAt).not.toBeNull());
+    });
+  });
 });
 
 const requestRepository = {
