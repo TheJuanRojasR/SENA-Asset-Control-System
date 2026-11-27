@@ -853,6 +853,300 @@ describe('Request endpoints', () => {
       expect(await assignmentsOf(item.id)).toBe(1);
     });
   });
+
+  // ---------------------------------------------------------------------------------
+  // US-SOL-02 / US-SOL-03 — Aprobar y rechazar (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-SOL-02/03 — Aprobar y rechazar', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayOffset = (offset) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      return new Date(date.getTime() + offset * DAY_MS);
+    };
+    let secondItem;
+
+    const createSecondItem = async () => {
+      secondItem = await prismaTest.item.create({
+        data: {
+          code: 'CARGADOR-001',
+          name: 'Cargador',
+          categoryId: category.id,
+          minStock: 1,
+          unit: 'UNIDAD',
+        },
+      });
+      return secondItem;
+    };
+
+    const createRequestWith = async ({ lines, user = instructor, pickupOffset = 1, estOffset = 3 }) => {
+      const response = await request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(user))
+        .send({
+          items: lines,
+          pickupDate: dayOffset(pickupOffset),
+          estimatedDate: dayOffset(estOffset),
+        });
+      return response;
+    };
+
+    const approve = (requestId, body, token = admin) =>
+      request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(token))
+        .send(body || {});
+
+    const reject = (requestId, body, token = admin) =>
+      request(app)
+        .put(`/api/requests/${requestId}/reject`)
+        .set('Authorization', authHeader(token))
+        .send(body || {});
+
+    const approvedQtyOf = async (requestId) => {
+      const items = await prismaTest.requestItem.findMany({ where: { requestId } });
+      return items.map((item) => item.approvedQty);
+    };
+
+    it('AC-SOL-02-1 — Aprobar sin cambios deja la solicitud APPROVED con la cantidad', async () => {
+      await seedUnits(item.id, 3);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+
+      const response = await approve(requestId);
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('APPROVED');
+      expect(response.body.data.request.requestItems[0].approvedQty).toBe(2);
+      expect(await approvedQtyOf(requestId)).toEqual([2]);
+
+      const reserved = await prismaTest.inventoryUnit.count({
+        where: { itemId: item.id, status: 'RESERVED' },
+      });
+      expect(reserved).toBe(2);
+      expect(
+        await prismaTest.requestItemUnit.count({
+          where: { requestItem: { requestId } },
+        })
+      ).toBe(2);
+    });
+
+    it('AC-SOL-02-2 — Al aprobar se puede reducir la cantidad y queda registrada', async () => {
+      await seedUnits(item.id, 4);
+      const oneLine = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 3 }] });
+      const oneLineId = oneLine.body.data.request.id;
+
+      const reduced = await approve(oneLineId, {
+        items: [{ itemId: item.id, approvedQty: 2 }],
+        note: 'Solo hay dos operativas',
+      });
+      expect(reduced.status).toBe(200);
+      expect(reduced.body.data.request.status).toBe('APPROVED');
+      expect(reduced.body.data.request.requestItems[0].requestedQty).toBe(3);
+      expect(reduced.body.data.request.requestItems[0].approvedQty).toBe(2);
+      expect(reduced.body.data.request.approvalNote).toBe('Solo hay dos operativas');
+
+      const second = await createSecondItem();
+      await seedUnits(item.id, 3);
+      await seedUnits(second.id, 2);
+      const twoLines = await createRequestWith({
+        lines: [
+          { itemId: item.id, requestedQty: 3 },
+          { itemId: second.id, requestedQty: 2 },
+        ],
+      });
+      const twoLinesId = twoLines.body.data.request.id;
+      const twoLinesApproved = await approve(twoLinesId, {
+        items: [
+          { itemId: item.id, approvedQty: 3 },
+          { itemId: second.id, approvedQty: 1 },
+        ],
+        note: 'Del cargador solo queda uno',
+      });
+      expect(twoLinesApproved.status).toBe(200);
+      const totalRequested = twoLinesApproved.body.data.request.requestItems.reduce(
+        (sum, row) => sum + row.requestedQty,
+        0
+      );
+      const totalApproved = twoLinesApproved.body.data.request.requestItems.reduce(
+        (sum, row) => sum + row.approvedQty,
+        0
+      );
+      expect(totalRequested).toBe(5);
+      expect(totalApproved).toBe(4);
+    });
+
+    it('AC-SOL-02-3 — No se puede aprobar una cantidad mayor a la solicitada', async () => {
+      await seedUnits(item.id, 3);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+
+      const response = await approve(requestId, {
+        items: [{ itemId: item.id, approvedQty: 3 }],
+        note: 'Intento',
+      });
+      expect(response.status).toBe(400);
+      const stored = await prismaTest.request.findUnique({ where: { id: requestId } });
+      expect(stored.status).toBe('PENDING');
+      expect(await approvedQtyOf(requestId)).toEqual([null]);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } })
+      ).toBe(2);
+    });
+
+    it('AC-SOL-02-4 — La nota es obligatoria al reducir el total y opcional al aprobar lo pedido', async () => {
+      await seedUnits(item.id, 20);
+      // Reducción sin nota.
+      const reducedWithoutNote = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 3 }],
+      });
+      const reducedId = reducedWithoutNote.body.data.request.id;
+      const rejected = await approve(reducedId, {
+        items: [{ itemId: item.id, approvedQty: 2 }],
+      });
+      expect(rejected.status).toBe(400);
+      expect(JSON.stringify(rejected.body).toLowerCase()).toContain('nota');
+      expect((await prismaTest.request.findUnique({ where: { id: reducedId } })).status).toBe(
+        'PENDING'
+      );
+      expect(await approvedQtyOf(reducedId)).toEqual([null]);
+
+      // Aprobación exacta sin nota.
+      const exact = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      expect((await approve(exact.body.data.request.id)).status).toBe(200);
+
+      // Dos líneas con totales iguales sin nota.
+      const second = await createSecondItem();
+      await seedUnits(item.id, 3);
+      await seedUnits(second.id, 2);
+      const equalTotals = await createRequestWith({
+        lines: [
+          { itemId: item.id, requestedQty: 3 },
+          { itemId: second.id, requestedQty: 2 },
+        ],
+      });
+      expect((await approve(equalTotals.body.data.request.id)).status).toBe(200);
+
+      // Dos líneas con total menor sin nota.
+      await seedUnits(second.id, 5);
+      const lowerTotal = await createRequestWith({
+        lines: [
+          { itemId: item.id, requestedQty: 3 },
+          { itemId: second.id, requestedQty: 2 },
+        ],
+      });
+      const lowerRejected = await approve(lowerTotal.body.data.request.id, {
+        items: [
+          { itemId: item.id, approvedQty: 3 },
+          { itemId: second.id, approvedQty: 1 },
+        ],
+      });
+      expect(lowerRejected.status).toBe(400);
+      expect(JSON.stringify(lowerRejected.body).toLowerCase()).toContain('nota');
+    });
+
+    it('AC-SOL-02-5 — Solo el administrador aprueba', async () => {
+      await seedUnits(item.id, 3);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+
+      const response = await approve(requestId, {}, instructor);
+      expect(response.status).toBe(403);
+      expect((await prismaTest.request.findUnique({ where: { id: requestId } })).status).toBe(
+        'PENDING'
+      );
+      expect(await approvedQtyOf(requestId)).toEqual([null]);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } })
+      ).toBe(2);
+    });
+
+    it('AC-SOL-02-6 — No se puede aprobar más de lo disponible para el rango', async () => {
+      await seedUnits(item.id, 3);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 3 }] });
+      const requestId = created.body.data.request.id;
+      const units = await prismaTest.inventoryUnit.findMany({
+        where: { itemId: item.id },
+        take: 2,
+      });
+      await prismaTest.inventoryUnit.updateMany({
+        where: { id: { in: units.map((unit) => unit.id) } },
+        data: { status: 'LOANED' },
+      });
+
+      const rejected = await approve(requestId, {
+        items: [{ itemId: item.id, approvedQty: 3 }],
+        note: 'Aprobación completa',
+      });
+      expect(rejected.status).toBe(409);
+      expect(rejected.body.code).toBe('INSUFFICIENT_STOCK');
+      expect((await prismaTest.request.findUnique({ where: { id: requestId } })).status).toBe(
+        'PENDING'
+      );
+      expect(await approvedQtyOf(requestId)).toEqual([null]);
+
+      // Exactamente lo disponible.
+      await seedUnits(item.id, 2);
+      const exactCase = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const exactId = exactCase.body.data.request.id;
+      const approved = await approve(exactId, {
+        items: [{ itemId: item.id, approvedQty: 2 }],
+      });
+      expect(approved.status).toBe(200);
+      expect(await approvedQtyOf(exactId)).toEqual([2]);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId: exactId } } })
+      ).toBe(2);
+    });
+
+    it('AC-SOL-03-1 — Rechazar exige motivo y registra quién, cuándo y por qué', async () => {
+      await seedUnits(item.id, 2);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const requestId = created.body.data.request.id;
+
+      const response = await reject(requestId, { rejectionReason: 'Equipo en mantenimiento' });
+      expect(response.status).toBe(200);
+      expect(response.body.data.request.status).toBe('REJECTED');
+      expect(response.body.data.request.rejectionReason).toBe('Equipo en mantenimiento');
+      expect(response.body.data.request.rejectedById).toBe(admin.id);
+      expect(response.body.data.request.rejectedAt).not.toBeNull();
+    });
+
+    it('AC-SOL-03-2 — Rechazar libera la reserva del rango', async () => {
+      await seedUnits(item.id, 2);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      const requestId = created.body.data.request.id;
+
+      const response = await reject(requestId, { rejectionReason: 'No alcanza' });
+      expect(response.status).toBe(200);
+      expect(
+        await prismaTest.inventoryUnit.count({
+          where: { itemId: item.id, status: 'AVAILABLE' },
+        })
+      ).toBe(2);
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } })
+      ).toBe(0);
+
+      const again = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 2 }] });
+      expect(again.status).toBe(201);
+    });
+
+    it('AC-SOL-03-3 — Un rechazo sin motivo se rechaza y la solicitud sigue PENDING', async () => {
+      await seedUnits(item.id, 2);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const requestId = created.body.data.request.id;
+
+      const response = await reject(requestId, {});
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body).toLowerCase()).toContain('motivo');
+      expect((await prismaTest.request.findUnique({ where: { id: requestId } })).status).toBe(
+        'PENDING'
+      );
+      expect(
+        await prismaTest.requestItemUnit.count({ where: { requestItem: { requestId } } })
+      ).toBe(1);
+    });
+  });
 });
 
 const requestRepository = {
