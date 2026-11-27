@@ -8,7 +8,7 @@ Este módulo resuelve el padrón de personas del sistema: dar de alta a un instr
 
 Lo usa el **administrador** en todas las operaciones menos una. El **instructor** solo ejerce sobre su propia cuenta el cambio de contraseña que le reconoce `RN-USR-04`; escribir el padrón es acción administrativa (`RN-CTX-05`) y responde `403` sin efectos.
 
-Si el módulo falla, el sistema acepta cuentas que nadie autorizó, deja entrar a un instructor desactivado, borra al deudor de un préstamo en curso o se queda sin ningún administrador activo. Las tres primeras rompen la trazabilidad que `RN-PRE-02` exige; la última deja el sistema inoperable. Estado hoy: **6 historias y 23 criterios especificados y sin ejecutar**; ningún criterio es `OK` ni `GAP`, porque todavía no hay test que los corra.
+Si el módulo falla, el sistema acepta cuentas que nadie autorizó, deja entrar a un instructor desactivado, borra al deudor de un préstamo en curso o se queda sin ningún administrador activo. Las tres primeras rompen la trazabilidad que `RN-PRE-02` exige; la última deja el sistema inoperable. Estado hoy: **6 historias y 23 criterios ejecutados y en `OK`** en la rama `devJoseph-usuarios`: cada criterio tiene test con su id en `server/tests/integration/user.test.js` y la suite pasa. La revisión independiente de quien implementó queda pendiente en el PR.
 
 ## Alcance
 
@@ -492,35 +492,35 @@ Sin decisión todavía: los requisitos de fortaleza de la contraseña, el mecani
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **especificado y no ejecutado**: los 23 criterios están sin estado y ninguno es `OK`, `GAP` ni `FALTA` hoy.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó en la rama `devJoseph-usuarios` con `server/tests/integration/user.test.js`: los 23 criterios tienen test con su id y pasan.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
-| `AC-USR-01-1` | `RN-USR-01`, `RN-USR-02` | Sin ejecutar |
-| `AC-USR-01-2` | `RN-USR-02` | Sin ejecutar |
-| `AC-USR-01-3` | `RN-USR-02` | Sin ejecutar |
-| `AC-USR-01-4` | `Estándar` | Sin ejecutar |
-| `AC-USR-01-5` | `RN-CTX-05` | Sin ejecutar |
-| `AC-USR-02-1` | `Estándar` | Sin ejecutar |
-| `AC-USR-02-2` | `Estándar` | Sin ejecutar |
-| `AC-USR-02-3` | `Estándar` | Sin ejecutar |
-| `AC-USR-02-4` | `RN-USR-08` | Sin ejecutar |
-| `AC-USR-06-3` | `RN-CTX-02` | Sin ejecutar |
-| `AC-USR-03-1` | `RN-USR-05` | Sin ejecutar |
-| `AC-USR-03-2` | `RN-USR-05` | Sin ejecutar |
-| `AC-USR-03-3` | `RN-USR-05` | Sin ejecutar |
-| `AC-USR-03-4` | `RN-USR-11` | Sin ejecutar |
-| `AC-USR-04-1` | `RN-USR-04` | Sin ejecutar |
-| `AC-USR-04-2` | `RN-USR-12` | Sin ejecutar |
-| `AC-USR-04-3` | `RN-USR-06` | Sin ejecutar |
-| `AC-USR-05-1` | `RN-USR-03` | Sin ejecutar |
-| `AC-USR-05-2` | `RN-USR-03` | Sin ejecutar |
-| `AC-USR-05-3` | `RN-CTX-05` | Sin ejecutar |
-| `AC-USR-05-4` | `RN-USR-07` | Sin ejecutar |
-| `AC-USR-06-1` | `RN-USR-10` | Sin ejecutar |
-| `AC-USR-06-2` | `RN-USR-09` | Sin ejecutar |
+| `AC-USR-01-1` | `RN-USR-01`, `RN-USR-02` | `OK` |
+| `AC-USR-01-2` | `RN-USR-02` | `OK` |
+| `AC-USR-01-3` | `RN-USR-02` | `OK` |
+| `AC-USR-01-4` | `Estándar` | `OK` |
+| `AC-USR-01-5` | `RN-CTX-05` | `OK` |
+| `AC-USR-02-1` | `Estándar` | `OK` |
+| `AC-USR-02-2` | `Estándar` | `OK` |
+| `AC-USR-02-3` | `Estándar` | `OK` |
+| `AC-USR-02-4` | `RN-USR-08` | `OK` |
+| `AC-USR-06-3` | `RN-CTX-02` | `OK` |
+| `AC-USR-03-1` | `RN-USR-05` | `OK` |
+| `AC-USR-03-2` | `RN-USR-05` | `OK` |
+| `AC-USR-03-3` | `RN-USR-05` | `OK` |
+| `AC-USR-03-4` | `RN-USR-11` | `OK` |
+| `AC-USR-04-1` | `RN-USR-04` | `OK` |
+| `AC-USR-04-2` | `RN-USR-12` | `OK` |
+| `AC-USR-04-3` | `RN-USR-06` | `OK` |
+| `AC-USR-05-1` | `RN-USR-03` | `OK` |
+| `AC-USR-05-2` | `RN-USR-03` | `OK` |
+| `AC-USR-05-3` | `RN-CTX-05` | `OK` |
+| `AC-USR-05-4` | `RN-USR-07` | `OK` |
+| `AC-USR-06-1` | `RN-USR-10` | `OK` |
+| `AC-USR-06-2` | `RN-USR-09` | `OK` |
 
-Totales: **6 historias y 23 criterios**, todos sin ejecutar. **19** se apoyan en una regla de negocio confirmada y **4** en un invariante técnico (`Estándar`: `AC-USR-01-4`, `AC-USR-02-1`, `AC-USR-02-2`, `AC-USR-02-3`). Ninguno está en `OPEN` ni es `Derivada`: las preguntas que este epic tenía abiertas quedaron respondidas por las reglas confirmadas de §5.7 y §5.8.
+Totales: **6 historias y 23 criterios**, **23 `OK`** (verificación ejecutada en Linux; la revisión independiente del código queda pendiente). **19** se apoyan en una regla de negocio confirmada y **4** en un invariante técnico (`Estándar`: `AC-USR-01-4`, `AC-USR-02-1`, `AC-USR-02-2`, `AC-USR-02-3`). Ninguno está en `OPEN` ni es `Derivada`: las preguntas que este epic tenía abiertas quedaron respondidas por las reglas confirmadas de §5.7 y §5.8.
 
 ## Anexo — Datos de prueba
 
