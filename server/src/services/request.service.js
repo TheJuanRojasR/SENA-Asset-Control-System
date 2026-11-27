@@ -214,9 +214,20 @@ export const requestService = {
       // (solicitudes anteriores a la reserva inmediata), se asigna aquí como respaldo.
       for (const requestItem of requestItems) {
         const item = await itemRepository.findById(requestItem.itemId);
-        // RN-INV-11: el consumible no tiene unidades que asignar; su stock no cambia al
-        // empacar (solo al entregar).
-        if (item?.isConsumable) continue;
+        // RN-INV-11: el consumible no tiene unidades que asignar y su stock no cambia al
+        // empacar, pero la cantidad se verifica también aquí (puede haber cambiado desde
+        // que se creó la solicitud) y vuelve a verificarse al entregar.
+        if (item?.isConsumable) {
+          const neededQty = requestItem.approvedQty ?? requestItem.requestedQty;
+          if ((item.stock ?? 0) < neededQty) {
+            throw new AppError(
+              `Stock insuficiente de ${item.name}`,
+              HTTP_STATUS.CONFLICT,
+              'INSUFFICIENT_STOCK'
+            );
+          }
+          continue;
+        }
 
         const needed = requestItem.approvedQty ?? requestItem.requestedQty;
         const assigned = countAssignedParentUnits(requestItem);
