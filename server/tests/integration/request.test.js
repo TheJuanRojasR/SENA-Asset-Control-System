@@ -8,6 +8,7 @@ import {
   expiryThresholdFor,
   bogotaInstant,
 } from '../../src/services/reservationCleanup.service.js';
+import { notificationChannelService } from '../../src/services/notificationChannel.service.js';
 import { errorHandler } from '../../src/middlewares/errorHandler.js';
 import { generateTokens } from '../../src/utils/jwt.js';
 import { prismaTest, resetDatabase } from '../helpers/prisma.js';
@@ -1968,6 +1969,278 @@ describe('Request endpoints', () => {
       expect(expired.cancellationCause).toBe('EXPIRED');
       expect(manualStored.status).toBe('CANCELLED');
       expect(manualStored.cancellationCause).toBe('MANUAL');
+    });
+  });
+
+  // ---------------------------------------------------------------------------------
+  // US-SOL-09 — Consultar solicitudes (verificación)
+  // ---------------------------------------------------------------------------------
+  describe('US-SOL-09 — Consultar solicitudes', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const dayOffset = (offset) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      return new Date(date.getTime() + offset * DAY_MS);
+    };
+
+    const createRequestWith = async ({ lines, user = instructor }) =>
+      request(app)
+        .post('/api/requests')
+        .set('Authorization', authHeader(user))
+        .send({
+          items: lines,
+          pickupDate: dayOffset(1),
+          estimatedDate: dayOffset(3),
+        });
+
+    const approve = (requestId) =>
+      request(app)
+        .put(`/api/requests/${requestId}/approve`)
+        .set('Authorization', authHeader(admin));
+
+    const reject = (requestId, reason) =>
+      request(app)
+        .put(`/api/requests/${requestId}/reject`)
+        .set('Authorization', authHeader(admin))
+        .send({ rejectionReason: reason });
+
+    const cancel = (requestId, user = admin) =>
+      request(app)
+        .delete(`/api/requests/${requestId}`)
+        .set('Authorization', authHeader(user));
+
+    const listRequests = (user, query = {}) =>
+      request(app)
+        .get('/api/requests')
+        .query(query)
+        .set('Authorization', authHeader(user));
+
+    const getRequest = (requestId, user) =>
+      request(app)
+        .get(`/api/requests/${requestId}`)
+        .set('Authorization', authHeader(user));
+
+    it('AC-SOL-09-1 — El instructor consulta sus solicitudes y la cuenta desactivada no las cancela', async () => {
+      await seedUnits(item.id, 3);
+      const pending = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const approvedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const rejectedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const approvedId = approvedReq.body.data.request.id;
+      await approve(approvedId);
+      const rejectedId = rejectedReq.body.data.request.id;
+      await reject(rejectedId, 'No hay disponibilidad');
+
+      const response = await listRequests(instructor);
+      expect(response.status).toBe(200);
+      const rows = response.body.data.data;
+      expect(rows).toHaveLength(3);
+      const statusById = Object.fromEntries(rows.map((row) => [row.id, row.status]));
+      expect(statusById[pending.body.data.request.id]).toBe('PENDING');
+      expect(statusById[approvedId]).toBe('APPROVED');
+      expect(statusById[rejectedId]).toBe('REJECTED');
+
+      // La cuenta desactivada no cancela lo que está en curso.
+      await prismaTest.user.update({
+        where: { id: instructor.id },
+        data: { isActive: false },
+      });
+      const adminList = await listRequests(admin, { requesterId: instructor.id });
+      expect(adminList.status).toBe(200);
+      const approvedRow = adminList.body.data.data.find((row) => row.id === approvedId);
+      expect(approvedRow.status).toBe('APPROVED');
+      expect(approvedRow.requester.id).toBe(instructor.id);
+    });
+
+    it('AC-SOL-09-2 — El instructor ve el motivo del rechazo y la nota de la reducción', async () => {
+      await seedUnits(item.id, 4);
+      const rejectedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const rejectedId = rejectedReq.body.data.request.id;
+      await reject(rejectedId, 'Equipo en mantenimiento');
+
+      const rejectedView = await getRequest(rejectedId, instructor);
+      expect(rejectedView.status).toBe(200);
+      expect(rejectedView.body.data.request.status).toBe('REJECTED');
+      expect(rejectedView.body.data.request.rejectionReason).toBe('Equipo en mantenimiento');
+
+      const reducedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 3 }] });
+      const reducedId = reducedReq.body.data.request.id;
+      const approved = await request(app)
+        .put(`/api/requests/${reducedId}/approve`)
+        .set('Authorization', authHeader(admin))
+        .send({
+          items: [{ itemId: item.id, approvedQty: 2 }],
+          note: 'Solo hay dos operativas',
+        });
+      expect(approved.status).toBe(200);
+
+      const approvedView = await getRequest(reducedId, instructor);
+      const row = approvedView.body.data.request.requestItems[0];
+      expect(row.requestedQty).toBe(3);
+      expect(row.approvedQty).toBe(2);
+      expect(approvedView.body.data.request.approvalNote).toBe('Solo hay dos operativas');
+    });
+
+    it('AC-SOL-09-3 — El instructor no ve las solicitudes de otros', async () => {
+      await seedUnits(item.id, 2);
+      const own = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const other = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+        user: otherInstructor,
+      });
+
+      const list = await listRequests(instructor);
+      const ids = list.body.data.data.map((row) => row.id);
+      expect(ids).toContain(own.body.data.request.id);
+      expect(ids).not.toContain(other.body.data.request.id);
+
+      const direct = await getRequest(other.body.data.request.id, instructor);
+      expect(direct.status).toBe(403);
+    });
+
+    it('AC-SOL-09-4 — El administrador consulta todas y filtra por estado', async () => {
+      await seedUnits(item.id, 3);
+      const mine = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const otherPending = await createRequestWith({
+        lines: [{ itemId: item.id, requestedQty: 1 }],
+        user: otherInstructor,
+      });
+      const approvedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      await approve(approvedReq.body.data.request.id);
+
+      const all = await listRequests(admin);
+      const allIds = all.body.data.data.map((row) => row.id);
+      expect(allIds).toContain(mine.body.data.request.id);
+      expect(allIds).toContain(otherPending.body.data.request.id);
+      expect(allIds).toContain(approvedReq.body.data.request.id);
+
+      const filtered = await listRequests(admin, { status: 'APPROVED' });
+      expect(filtered.body.data.data).toHaveLength(1);
+      expect(filtered.body.data.data[0].status).toBe('APPROVED');
+    });
+
+    it('AC-SOL-09-5 — El instructor consulta los avisos de sus solicitudes', async () => {
+      await seedUnits(item.id, 6);
+
+      // Aprobación.
+      const approvedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const approvedId = approvedReq.body.data.request.id;
+      await approve(approvedId);
+
+      // Rechazo con motivo.
+      const rejectedReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const rejectedId = rejectedReq.body.data.request.id;
+      await reject(rejectedId, 'No alcanza el stock');
+
+      // Vencimiento.
+      const expiredReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const expiredId = expiredReq.body.data.request.id;
+      await approve(expiredId);
+      const pickup = new Date(Date.UTC(2026, 10, 10));
+      await prismaTest.request.update({ where: { id: expiredId }, data: { pickupDate: pickup } });
+      await reservationCleanupService.cleanupExpiredReservations({
+        now: new Date(expiryThresholdFor(pickup).getTime() + DAY_MS),
+      });
+
+      // Cancelación manual.
+      const manualReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      await cancel(manualReq.body.data.request.id, admin);
+
+      // Entrega: no deja aviso de entrega.
+      const deliveredReq = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const deliveredId = deliveredReq.body.data.request.id;
+      await approve(deliveredId);
+      await request(app)
+        .put(`/api/requests/${deliveredId}/pack`)
+        .set('Authorization', authHeader(admin));
+      const noticesBeforeDelivery = await prismaTest.notification.count({
+        where: { requestId: deliveredId },
+      });
+      await request(app)
+        .put(`/api/requests/${deliveredId}/deliver`)
+        .set('Authorization', authHeader(admin));
+      const noticesAfterDelivery = await prismaTest.notification.count({
+        where: { requestId: deliveredId },
+      });
+      expect(noticesAfterDelivery).toBe(noticesBeforeDelivery);
+
+      const list = await request(app)
+        .get('/api/notifications')
+        .set('Authorization', authHeader(instructor));
+      const notices = list.body.data.data;
+      const byRequest = (requestId, type) =>
+        notices.find((notice) => notice.requestId === requestId && notice.type === type);
+      expect(byRequest(approvedId, 'REQUEST_APPROVED')).toBeDefined();
+      expect(byRequest(rejectedId, 'REQUEST_REJECTED').message).toContain('No alcanza el stock');
+      expect(byRequest(expiredId, 'REQUEST_EXPIRED')).toBeDefined();
+      expect(byRequest(manualReq.body.data.request.id, 'REQUEST_CANCELLED')).toBeDefined();
+      expect(byRequest(expiredId, 'REQUEST_CANCELLED')).toBeUndefined();
+    });
+
+    it('AC-SOL-09-6 — La consulta es paginada con total y sin repetir entre páginas', async () => {
+      await seedUnits(item.id, 25);
+      for (let index = 0; index < 25; index += 1) {
+        const created = await createRequestWith({
+          lines: [{ itemId: item.id, requestedQty: 1 }],
+        });
+        expect(created.status).toBe(201);
+      }
+
+      const first = await listRequests(instructor, { page: 1, limit: 10 });
+      expect(first.status).toBe(200);
+      expect(first.body.data.data).toHaveLength(10);
+      expect(first.body.data.meta.total).toBe(25);
+
+      const second = await listRequests(instructor, { page: 2, limit: 10 });
+      expect(second.body.data.data).toHaveLength(10);
+      const firstIds = first.body.data.data.map((row) => row.id);
+      const secondIds = second.body.data.data.map((row) => row.id);
+      expect(secondIds.some((id) => firstIds.includes(id))).toBe(false);
+
+      const third = await listRequests(instructor, { page: 3, limit: 10 });
+      expect(third.body.data.data).toHaveLength(5);
+    });
+
+    it('AC-SOL-09-7 — Los canales externos son opcionales y no condicionan el aviso interno', async () => {
+      notificationChannelService.reset();
+      await seedUnits(item.id, 1);
+      const created = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      const requestId = created.body.data.request.id;
+
+      // Ambos canales configurados.
+      notificationChannelService.setChannels({ email: true, whatsapp: true });
+      expect((await approve(requestId)).status).toBe(200);
+      let deliveries = notificationChannelService.getDeliveries();
+      expect(deliveries.some((entry) => entry.channel === 'EMAIL')).toBe(true);
+      expect(deliveries.some((entry) => entry.channel === 'WHATSAPP')).toBe(true);
+      expect(
+        await prismaTest.notification.count({
+          where: { requestId, type: 'REQUEST_APPROVED' },
+        })
+      ).toBe(1);
+
+      // Solo correo.
+      await seedUnits(item.id, 1);
+      const emailOnly = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      notificationChannelService.reset();
+      notificationChannelService.setChannels({ email: true, whatsapp: false });
+      await approve(emailOnly.body.data.request.id);
+      deliveries = notificationChannelService.getDeliveries();
+      expect(deliveries.some((entry) => entry.channel === 'EMAIL')).toBe(true);
+      expect(deliveries.some((entry) => entry.channel === 'WHATSAPP')).toBe(false);
+
+      // Ningún canal: el aviso interno existe igual.
+      await seedUnits(item.id, 1);
+      const none = await createRequestWith({ lines: [{ itemId: item.id, requestedQty: 1 }] });
+      notificationChannelService.reset();
+      notificationChannelService.setChannels({ email: false, whatsapp: false });
+      await reject(none.body.data.request.id, 'Sin canales externos');
+      const notice = await prismaTest.notification.findFirst({
+        where: { requestId: none.body.data.request.id, type: 'REQUEST_REJECTED' },
+      });
+      expect(notice).not.toBeNull();
+      expect(notificationChannelService.getDeliveries()).toHaveLength(0);
+
+      notificationChannelService.setChannels({ email: false, whatsapp: false });
     });
   });
 });
