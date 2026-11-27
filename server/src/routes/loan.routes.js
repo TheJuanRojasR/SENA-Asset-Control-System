@@ -3,7 +3,14 @@ import { loanController } from '../controllers/loan.controller.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/role.js';
 import { validateBody, validateRequest } from '../middlewares/validateRequest.js';
-import { returnUnitsSchema, listReturnsQuerySchema } from '../validations/loan.validation.js';
+import {
+  returnUnitsSchema,
+  listReturnsQuerySchema,
+  listDamageTasksQuerySchema,
+  resolveDamageTaskSchema,
+  declareLossSchema,
+  damageTaskIdParamSchema,
+} from '../validations/loan.validation.js';
 
 const router = Router();
 
@@ -14,6 +21,24 @@ router.get('/', authorize('ADMIN', 'INSTRUCTOR'), loanController.list);
 
 // RN-PRE-04 / RN-PRE-05: registrar devolución es acción del administrador.
 router.post('/return', authorize('ADMIN'), validateBody(returnUnitsSchema), loanController.returnUnits);
+
+// RN-PRE-06/09 / US-PRE-03: tareas pendientes por daño (administrador).
+router.get(
+  '/damage-tasks',
+  authorize('ADMIN'),
+  validateRequest(listDamageTasksQuerySchema),
+  loanController.listDamageTasks
+);
+router.patch(
+  '/damage-tasks/:id/resolve',
+  authorize('ADMIN'),
+  validateRequest(damageTaskIdParamSchema),
+  validateBody(resolveDamageTaskSchema),
+  loanController.resolveDamageTask
+);
+
+// RN-PRE-15 / US-PRE-05: declarar la pérdida de una unidad prestada.
+router.post('/loss', authorize('ADMIN'), validateBody(declareLossSchema), loanController.declareLoss);
 
 // RN-MOV-01 / US-PRE-06: historial de devoluciones (administrador).
 router.get('/returns', authorize('ADMIN'), validateRequest(listReturnsQuerySchema), loanController.listReturns);

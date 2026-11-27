@@ -130,6 +130,63 @@ export const loanRepository = {
     });
   },
 
+  // ---- US-PRE-03: tareas por daño ----
+  async findDamageTasks(filters = {}, { page = 1, limit = 20 } = {}) {
+    const where = {};
+    if (filters.status) where.status = filters.status;
+    if (filters.inventoryUnitId) where.inventoryUnitId = filters.inventoryUnitId;
+
+    const [data, total] = await Promise.all([
+      prisma.damageTask.findMany({
+        where,
+        include: {
+          inventoryUnit: { include: { item: true } },
+          requestItemUnit: {
+            include: {
+              requestItem: {
+                include: { request: { include: { requester: { select: userSelect } } } },
+              },
+            },
+          },
+          createdBy: { select: userSelect },
+          resolvedBy: { select: userSelect },
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.damageTask.count({ where }),
+    ]);
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  },
+
+  async findDamageTaskById(id) {
+    return prisma.damageTask.findUnique({
+      where: { id },
+      include: { inventoryUnit: { include: { item: true } } },
+    });
+  },
+
+  async resolveDamageTask(id, { resolvedById, resolutionNote }, { tx } = {}) {
+    return (tx || prisma).damageTask.update({
+      where: { id },
+      data: {
+        status: 'RESOLVED',
+        resolvedById,
+        resolvedAt: new Date(),
+        resolutionNote,
+      },
+    });
+  },
+
+  // ---- US-PRE-05: pérdida declarada ----
+  async registerLoss(assignmentId, { lostById, lostReason }, { tx } = {}) {
+    return (tx || prisma).requestItemUnit.update({
+      where: { id: assignmentId },
+      data: { lostAt: new Date(), lostById, lostReason },
+    });
+  },
+
   /** RN-MOV-01 / US-PRE-06: historial de devoluciones con filtros. */
   async findReturns(filters = {}, { page = 1, limit = 20 } = {}) {
     const where = { returnedAt: { not: null } };
