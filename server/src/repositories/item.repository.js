@@ -244,6 +244,7 @@ function buildWhere(filters = {}, { includeInactive = true } = {}) {
   }
 
   if (filters.categoryId) where.categoryId = filters.categoryId;
+  if (typeof filters.isConsumable === 'boolean') where.isConsumable = filters.isConsumable;
   if (filters.search) {
     where.OR = [
       { name: { contains: filters.search } },

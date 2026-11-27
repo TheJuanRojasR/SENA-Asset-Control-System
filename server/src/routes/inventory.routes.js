@@ -9,6 +9,7 @@ import {
   inventoryIdParamSchema,
   listInventoryQuerySchema,
   assemblySchema,
+  incompleteAssembliesQuerySchema,
 } from '../validations/inventory.validation.js';
 
 const router = Router();
@@ -17,6 +18,13 @@ const readAccess = [authenticate, authorize('ADMIN', 'INSTRUCTOR')];
 const writeAccess = [authenticate, authorize('ADMIN')];
 
 router.get('/low-stock', ...readAccess, inventoryController.lowStock);
+// RN-INV-10: conjuntos funcionalmente incompletos (antes de /:id).
+router.get(
+  '/incomplete-assemblies',
+  ...writeAccess,
+  validateRequest(incompleteAssembliesQuerySchema),
+  inventoryController.incompleteAssemblies
+);
 router.get('/', ...readAccess, validateRequest(listInventoryQuerySchema), inventoryController.list);
 router.get(
   '/:id',

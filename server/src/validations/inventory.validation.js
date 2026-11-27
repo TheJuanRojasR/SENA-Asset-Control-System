@@ -18,6 +18,8 @@ export const createInventorySchema = z.object({
     errorMap: () => ({ message: 'Estado físico inválido' }),
   }).optional(),
   notes: z.string().optional(),
+  // RN-INV-20: tenencia de la unidad física (por defecto SENA).
+  ownership: z.enum(['SENA', 'DONATED']).optional(),
 });
 
 export const updateInventorySchema = z.object({
@@ -30,6 +32,12 @@ export const updateInventorySchema = z.object({
     errorMap: () => ({ message: 'Estado físico inválido' }),
   }).optional(),
   notes: z.string().optional(),
+  ownership: z.enum(['SENA', 'DONATED']).optional(),
+});
+
+export const incompleteAssembliesQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
 });
 
 export const inventoryIdParamSchema = z.object({

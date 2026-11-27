@@ -58,6 +58,8 @@ export const itemIdParamSchema = z.object({
 export const listItemsQuerySchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().optional(),
+  // RN-INV-34 / AC-INV-07-4: el catálogo presenta consumibles y serializados en listas separadas.
+  isConsumable: z.enum(['true', 'false']).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
