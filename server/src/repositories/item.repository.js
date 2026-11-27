@@ -10,6 +10,8 @@ const defaultSelect = {
   minStock: true,
   unit: true,
   isConsumable: true,
+  ownership: true,
+  stock: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,

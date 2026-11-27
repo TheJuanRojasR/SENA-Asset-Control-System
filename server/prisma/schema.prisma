@@ -120,6 +120,12 @@ model Category {
   @@map("categories")
 }
 
+// RN-INV-07 / RN-INV-46: dos tenencias; solo un elemento donado puede ser consumible.
+enum Ownership {
+  SENA
+  DONATED
+}
+
 model Item {
   id           Int      @id @default(autoincrement())
   code         String   @unique @db.VarChar(100)
@@ -127,9 +133,15 @@ model Item {
   description  String?  @db.Text
   imageUrl     String?  @db.VarChar(500)
   categoryId   Int
-  minStock     Int      @default(0)
+  // RN-INV-44: el umbral lo fija el administrador por elemento; si falta (NULL) no hay
+  // alerta y el sistema no inventa un valor por defecto.
+  minStock     Int?
   unit         String   @default("UNIDAD") @db.VarChar(50)
   isConsumable Boolean  @default(false)
+  // RN-INV-07 / RN-INV-46: tenencia del elemento; solo DONATED puede ser consumible.
+  ownership    Ownership @default(SENA)
+  // RN-INV-06: existencia del consumible controlada por cantidad (no genera unidades).
+  stock        Int      @default(0)
   isActive     Boolean  @default(true)
   isDeleted    Boolean  @default(false)
   createdAt    DateTime @default(now())
