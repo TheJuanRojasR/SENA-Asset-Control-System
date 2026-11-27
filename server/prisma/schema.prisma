@@ -199,6 +199,8 @@ model InventoryUnit {
   parentUnitId  Int?
   status        UnitStatus    @default(AVAILABLE)
   physicalState PhysicalState @default(OPERATIVO)
+  // RN-INV-20: la tenencia de un equipo serializado vive en la unidad física.
+  ownership Ownership @default(SENA)
   // RN-INV-33: trámite de baja abierto (no es estado físico). Bloquea la unidad y sus piezas.
   disposalInProgress Boolean  @default(false)
   // RN-PRE-15: unidad declarada perdida. Sale del inventario activo y no bloquea; sus

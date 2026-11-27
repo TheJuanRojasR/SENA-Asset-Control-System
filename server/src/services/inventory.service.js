@@ -339,28 +339,38 @@ export const inventoryService = {
     });
   },
 
+  /**
+   * RN-INV-10 / RN-INV-27: integridad funcional del conjunto, evaluada de forma recursiva.
+   * Una pieza cuenta como presente solo si está físicamente dentro (status AVAILABLE);
+   * si salió suelta (reservada o prestada) se informa como faltante con su tenedor.
+   * La ausencia de un opcional se documenta sin volver incompleto al conjunto.
+   */
   async getUnitDetail(id) {
     const unit = await inventoryRepository.findById(id);
     if (!unit) {
       throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
     }
+    const completeness = await computeUnitCompleteness(unit);
+    return { unit: { ...unit, ...completeness } };
+  },
 
-    const components = await inventoryRepository.findItemComponents(unit.itemId);
-    const childUnits = await inventoryRepository.findChildUnits(id);
+  /** RN-INV-10 / AC-INV-05-3: conjuntos funcionalmente incompletos de todo el inventario. */
+  async listIncompleteAssemblies(pagination = {}) {
+    const units = await inventoryRepository.findAllAssemblyUnits();
+    const incomplete = [];
+    for (const unit of units) {
+      const completeness = await computeUnitCompleteness(unit);
+      if (!completeness.isComplete) {
+        incomplete.push({ ...unit, ...completeness });
+      }
+    }
 
-    const assembledItemIds = new Set(childUnits.map((c) => c.itemId));
-    const isComplete = components
-      .filter((c) => c.isRequired)
-      .every((c) => assembledItemIds.has(c.childItemId));
-
+    const page = pagination.page || 1;
+    const limit = pagination.limit || 20;
+    const total = incomplete.length;
     return {
-      unit: {
-        ...unit,
-        isComplete,
-        missingComponents: components
-          .filter((c) => c.isRequired && !assembledItemIds.has(c.childItemId))
-          .map((c) => ({ ...c, childItem: c.childItem })),
-      },
+      data: incomplete.slice((page - 1) * limit, page * limit),
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 0 },
     };
   },
 };
@@ -369,3 +379,70 @@ export const inventoryService = {
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+/**
+ * Completitud funcional de una unidad de compuesto (RN-INV-10, RN-INV-27).
+ * Presente = físicamente dentro (status AVAILABLE). Los faltantes obligatorios llevan su
+ * tenedor si salieron sueltos; la recursión evalúa los compuestos ensamblados.
+ */
+async function computeUnitCompleteness(unit, visited = new Set()) {
+  if (visited.has(unit.id)) {
+    return { isComplete: true, missingComponents: [], optionalMissing: [] };
+  }
+  visited.add(unit.id);
+
+  const components = await inventoryRepository.findItemComponents(unit.itemId);
+  const childUnits = await inventoryRepository.findChildUnits(unit.id);
+  const physicallyInside = childUnits.filter((child) => child.status === 'AVAILABLE');
+
+  const presentByItem = new Map();
+  for (const child of physicallyInside) {
+    presentByItem.set(child.itemId, (presentByItem.get(child.itemId) || 0) + 1);
+  }
+
+  const missingComponents = [];
+  const optionalMissing = [];
+
+  for (const component of components) {
+    const requiredQty = component.quantity ?? 1;
+    const presentQty = presentByItem.get(component.childItemId) || 0;
+    if (presentQty >= requiredQty) continue;
+
+    const entry = {
+      childItemId: component.childItemId,
+      childItem: component.childItem,
+      isRequired: component.isRequired,
+      requiredQty,
+      presentQty,
+    };
+
+    // RN-PRE-02: si la pieza salió suelta, el compromiso dice quién la tiene.
+    const commitment = await inventoryRepository.findLooseCommitment(
+      unit.id,
+      component.childItemId
+    );
+    if (commitment) {
+      entry.holder = commitment.requestItem?.request?.requester ?? null;
+      entry.since = commitment.loanedAt ?? commitment.createdAt ?? null;
+    }
+
+    if (component.isRequired) missingComponents.push(entry);
+    else optionalMissing.push(entry);
+  }
+
+  // RN-INV-27: un compuesto dentro de otro se evalúa recursivamente y sus faltantes
+  // obligatorios se informan también en el conjunto padre.
+  for (const childUnit of physicallyInside) {
+    const childCompleteness = await computeUnitCompleteness(childUnit, new Set(visited));
+    if (!childCompleteness.isComplete) {
+      missingComponents.push(...childCompleteness.missingComponents);
+    }
+  }
+
+  return {
+    isComplete: missingComponents.length === 0,
+    missingComponents,
+    optionalMissing,
+  };
+}
+

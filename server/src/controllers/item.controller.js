@@ -9,6 +9,10 @@ export const itemController = {
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
       search: req.query.search,
       includeInactive: req.query.includeInactive !== 'false',
+      isConsumable:
+        req.query.isConsumable === undefined
+          ? undefined
+          : req.query.isConsumable === 'true' || req.query.isConsumable === true,
     };
     const pagination = {
       page: Number(req.query.page) || 1,

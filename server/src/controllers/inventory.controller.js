@@ -25,6 +25,15 @@ export const inventoryController = {
     successResponse(res, result);
   }),
 
+  incompleteAssemblies: asyncHandler(async (req, res) => {
+    const pagination = {
+      page: Number(req.query.page) || 1,
+      limit: Number(req.query.limit) || 20,
+    };
+    const result = await inventoryService.listIncompleteAssemblies(pagination);
+    successResponse(res, result);
+  }),
+
   getById: asyncHandler(async (req, res) => {
     const result = await inventoryService.getInventoryUnitById(Number(req.params.id));
     successResponse(res, result);

@@ -8,6 +8,7 @@ const defaultSelect = {
   parentUnitId: true,
   status: true,
   physicalState: true,
+  ownership: true,
   notes: true,
   createdAt: true,
   updatedAt: true,
@@ -168,6 +169,36 @@ export const inventoryRepository = {
       where: { id: unitId },
       data: { parentUnitId },
       select: defaultSelect,
+    });
+  },
+
+  /** RN-INV-10: quién tiene la pieza que salió suelta (compromiso activo de una pieza). */
+  async findLooseCommitment(parentUnitId, childItemId) {
+    return prisma.requestItemUnit.findFirst({
+      where: {
+        inventoryUnit: { parentUnitId, itemId: childItemId },
+        returnedAt: null,
+        lostAt: null,
+      },
+      include: {
+        requestItem: {
+          include: {
+            request: {
+              include: { requester: { select: { id: true, fullName: true, email: true } } },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  },
+
+  /** Unidades de elementos compuestos (para la lista de conjuntos incompletos). */
+  async findAllAssemblyUnits() {
+    return prisma.inventoryUnit.findMany({
+      where: { item: { components: { some: {} } } },
+      select: defaultSelect,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
   },
 
