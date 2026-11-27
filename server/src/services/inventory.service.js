@@ -110,7 +110,11 @@ export const inventoryService = {
     return { unit };
   },
 
-  async disposeInventoryUnit(id, userId, reason = 'Baja de unidad') {
+  /**
+   * RN-INV-14 / RN-INV-17 / AC-INV-08-1: la baja inmediata es solo para una unidad DONADA y
+   * exige motivo. El equipo del SENA exige el trámite de US-INV-09.
+   */
+  async disposeInventoryUnit(id, userId, reason) {
     const existing = await inventoryRepository.findById(id);
     if (!existing) {
       throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
@@ -124,7 +128,25 @@ export const inventoryService = {
       );
     }
 
-    const unit = await inventoryRepository.update(id, { status: 'DISPOSED' });
+    if (existing.ownership !== 'DONATED') {
+      throw new AppError(
+        'Una unidad del SENA se da de baja por el trámite con confirmación',
+        HTTP_STATUS.CONFLICT,
+        'SENA_REQUIRES_PROCESS'
+      );
+    }
+
+    const now = new Date();
+    const unit = await inventoryRepository.update(id, {
+      status: 'DISPOSED',
+      physicalState: 'DADO_DE_BAJA',
+      disposalInProgress: false,
+      disposalReason: reason,
+      disposalStartedAt: now,
+      disposalStartedById: userId ?? null,
+      disposalConfirmedAt: now,
+      disposalConfirmedById: userId ?? null,
+    });
 
     // RN-INV-17 / RN-MOV-01: la baja deja un movimiento con motivo y actor.
     await prisma.movement.create({
@@ -139,6 +161,139 @@ export const inventoryService = {
     });
 
     return { unit, message: 'Unidad dada de baja correctamente' };
+  },
+
+  /** RN-INV-19 / AC-INV-09-1: iniciar el trámite no da de baja la unidad (solo SENA). */
+  async startDisposal(id, userId, reason) {
+    const existing = await inventoryRepository.findById(id);
+    if (!existing) {
+      throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
+    }
+    if (existing.status === 'DISPOSED' || existing.declaredLost) {
+      throw new AppError(
+        'La unidad ya salió del inventario activo',
+        HTTP_STATUS.CONFLICT,
+        'UNIT_ALREADY_OUT'
+      );
+    }
+    if (existing.ownership !== 'SENA') {
+      throw new AppError(
+        'Solo un equipo del SENA tiene trámite de baja',
+        HTTP_STATUS.CONFLICT,
+        'NOT_SENA_OWNERSHIP'
+      );
+    }
+    if (existing.disposalInProgress) {
+      throw new AppError(
+        'La unidad ya tiene un trámite de baja abierto',
+        HTTP_STATUS.CONFLICT,
+        'DISPOSAL_ALREADY_OPEN'
+      );
+    }
+
+    const unit = await inventoryRepository.update(id, {
+      disposalInProgress: true,
+      disposalReason: reason,
+      disposalStartedAt: new Date(),
+      disposalStartedById: userId ?? null,
+      disposalConfirmedAt: null,
+      disposalConfirmedById: null,
+    });
+
+    return { unit, message: 'Trámite de baja iniciado' };
+  },
+
+  /** RN-INV-19/32 / AC-INV-09-3: la baja se efectiviza solo con la confirmación. */
+  async confirmDisposal(id, userId) {
+    const existing = await inventoryRepository.findById(id);
+    if (!existing) {
+      throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
+    }
+    if (!existing.disposalInProgress) {
+      throw new AppError(
+        'La unidad no tiene un trámite de baja abierto',
+        HTTP_STATUS.CONFLICT,
+        'NO_DISPOSAL_PROCESS'
+      );
+    }
+
+    const unit = await inventoryRepository.update(id, {
+      status: 'DISPOSED',
+      physicalState: 'DADO_DE_BAJA',
+      disposalInProgress: false,
+      disposalConfirmedAt: new Date(),
+      disposalConfirmedById: userId ?? null,
+    });
+
+    await prisma.movement.create({
+      data: {
+        type: 'DISPOSAL',
+        itemId: existing.itemId,
+        inventoryUnitId: id,
+        quantity: 1,
+        responsibleId: userId ?? null,
+        notes: existing.disposalReason || 'Baja confirmada',
+      },
+    });
+
+    return { unit, message: 'Baja confirmada correctamente' };
+  },
+
+  /**
+   * RN-INV-13 / AC-INV-08-5: pérdida de una unidad que no está prestada. La donada sale de
+   * inmediato; la del SENA entra al trámite, y como unidad perdida (RN-PRE-15) no bloquea
+   * sus piezas sueltas.
+   */
+  async registerUnitLoss(id, userId, reason) {
+    const existing = await inventoryRepository.findById(id);
+    if (!existing) {
+      throw new AppError('Unidad no encontrada', HTTP_STATUS.NOT_FOUND, 'INVENTORY_UNIT_NOT_FOUND');
+    }
+    if (existing.status === 'LOANED') {
+      throw new AppError(
+        'La pérdida de una unidad prestada se declara desde el préstamo',
+        HTTP_STATUS.CONFLICT,
+        'UNIT_IS_LOANED'
+      );
+    }
+    if (existing.declaredLost || existing.status === 'DISPOSED') {
+      throw new AppError(
+        'La unidad ya salió del inventario activo',
+        HTTP_STATUS.CONFLICT,
+        'UNIT_ALREADY_OUT'
+      );
+    }
+
+    const now = new Date();
+    const donated = existing.ownership === 'DONATED';
+    const unit = await inventoryRepository.update(id, {
+      declaredLost: true,
+      disposalReason: reason,
+      disposalStartedAt: now,
+      disposalStartedById: userId ?? null,
+      ...(donated
+        ? {
+            status: 'DISPOSED',
+            physicalState: 'DADO_DE_BAJA',
+            disposalInProgress: false,
+            disposalConfirmedAt: now,
+            disposalConfirmedById: userId ?? null,
+          }
+        : { disposalInProgress: true }),
+    });
+
+    await prisma.movement.create({
+      data: {
+        type: 'DISPOSAL',
+        itemId: existing.itemId,
+        inventoryUnitId: id,
+        quantity: 1,
+        responsibleId: userId ?? null,
+        notes: `Pérdida: ${reason}`,
+      },
+    });
+
+    return { unit, message: 'Pérdida registrada correctamente' };
   },
 
   async restoreInventoryUnit(id) {

@@ -10,6 +10,9 @@ import {
   listInventoryQuerySchema,
   assemblySchema,
   incompleteAssembliesQuerySchema,
+  disposalSchema,
+  disposalStartSchema,
+  lossSchema,
 } from '../validations/inventory.validation.js';
 
 const router = Router();
@@ -56,7 +59,32 @@ router.delete(
   '/:id',
   ...writeAccess,
   validateRequest(inventoryIdParamSchema),
+  validateBody(disposalSchema),
   inventoryController.remove
+);
+
+// RN-INV-19 / US-INV-09: trámite de baja del equipo del SENA (inicio y confirmación).
+router.post(
+  '/:id/disposal/start',
+  ...writeAccess,
+  validateRequest(inventoryIdParamSchema),
+  validateBody(disposalStartSchema),
+  inventoryController.startDisposal
+);
+router.post(
+  '/:id/disposal/confirm',
+  ...writeAccess,
+  validateRequest(inventoryIdParamSchema),
+  inventoryController.confirmDisposal
+);
+
+// RN-INV-13 / AC-INV-08-5: pérdida de una unidad que no está prestada.
+router.post(
+  '/:id/loss',
+  ...writeAccess,
+  validateRequest(inventoryIdParamSchema),
+  validateBody(lossSchema),
+  inventoryController.registerLoss
 );
 router.get(
   '/:id/detail',
