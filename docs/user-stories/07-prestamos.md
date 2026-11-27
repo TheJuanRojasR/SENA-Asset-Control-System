@@ -12,7 +12,7 @@ Lo usan **ambos actores**, con papeles distintos: el administrador **recibe** �
 
 Este módulo es dueño de **la devolución y la condición de retorno**, de **la tarea pendiente por daño**, de **la pérdida declarada** y del **cierre del préstamo**. Los estados y las transiciones de la solicitud son del epic 06; los estados físicos de la unidad y sus reglas de préstamo, del epic 05; el cálculo de la disponibilidad para un rango, del epic 08; el historial completo de movimientos, del epic 11. Acá se produce la devolución y se lee su consecuencia.
 
-Estado: **en ejecución parcial**. Seis historias y 37 criterios; **15 ya ejecutados y en `OK`** en la rama `devJoseph-prestamos` (US-PRE-01 completa y US-PRE-02 completa) con test `AC-PRE-*` en `server/tests/integration/loan.test.js`. US-PRE-03…06 siguen sin ejecutar.
+Estado: **37 de 37 criterios ejecutados y en `OK`** en la rama `devJoseph-prestamos`, con test `AC-PRE-*` en `server/tests/integration/loan.test.js`. No quedan criterios sin ejecutar.
 
 ## Índice de historias
 
@@ -972,7 +972,7 @@ Sin decisión todavía: qué **acciones concretas** puede relatar la nota de la 
 
 ## Trazabilidad y estado
 
-Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic está **en ejecución parcial**: 15 de los 37 criterios ya corren con test y quedaron en `OK`; US-PRE-03…06 siguen sin ejecutar hasta sus encadenados. La verificación implementó el contrato de devolución completo (unidades por serial, condición de retorno en dos ejes, mapeo a estado físico, tareas por daño y pérdida declarada) y la consulta de préstamos activos con marca de vencida.
+Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectura del código. Este epic se ejecutó completo: los **37** criterios tienen test y están en `OK`. La verificación implementó el contrato de devolución (unidades por serial, condición de retorno en dos ejes, mapeo al estado físico), las tareas por daño con resolución administrativa, la pérdida declarada por tenencia, el cierre de la solicitud y el historial de devoluciones con filtros.
 
 | Criterio | Regla | Estado hoy |
 |----------|-------|------------|
@@ -991,28 +991,28 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `AC-PRE-02-8` | `RN-PRE-08` | `OK` |
 | `AC-PRE-02-9` | `RN-PRE-12` (decisión técnica delegada) | `OK` |
 | `AC-PRE-02-10` | `RN-PRE-03`, `RN-PRE-05`, `RN-PRE-10` | `OK` |
-| `AC-PRE-03-1` | `RN-PRE-06` | Sin ejecutar |
-| `AC-PRE-03-2` | `RN-PRE-06` | Sin ejecutar |
-| `AC-PRE-03-3` | `RN-PRE-06` | Sin ejecutar |
-| `AC-PRE-03-4` | `RN-PRE-06` | Sin ejecutar |
-| `AC-PRE-03-5` | `RN-PRE-09` | Sin ejecutar |
-| `AC-PRE-03-6` | `RN-PRE-10` | Sin ejecutar |
-| `AC-PRE-03-7` | `RN-PRE-13` | Sin ejecutar |
-| `AC-PRE-03-8` | `RN-PRE-13` | Sin ejecutar |
-| `AC-PRE-03-9` | `RN-PRE-13` | Sin ejecutar |
-| `AC-PRE-04-1` | `RN-PRE-01` | Sin ejecutar |
-| `AC-PRE-04-2` | `RN-PRE-01` | Sin ejecutar |
-| `AC-PRE-04-3` | `Estándar` | Sin ejecutar |
-| `AC-PRE-04-4` | `RN-PRE-14` | Sin ejecutar |
-| `AC-PRE-04-5` | `RN-SOL-12`, `RN-PRE-01` | Sin ejecutar |
-| `AC-PRE-05-1` | `RN-PRE-15` | Sin ejecutar |
-| `AC-PRE-05-2` | `RN-PRE-15` | Sin ejecutar |
-| `AC-PRE-05-3` | `RN-PRE-15` | Sin ejecutar |
-| `AC-PRE-05-4` | `RN-PRE-15` | Sin ejecutar |
-| `AC-PRE-05-5` | `RN-PRE-16`, `RN-SOL-12` | Sin ejecutar |
-| `AC-PRE-06-1` | `RN-PRE-02`, `RN-MOV-01` | Sin ejecutar |
-| `AC-PRE-06-2` | `RN-MOV-02` | Sin ejecutar |
-| `AC-PRE-06-3` | `RN-CTX-02` | Sin ejecutar |
+| `AC-PRE-03-1` | `RN-PRE-06` | `OK` |
+| `AC-PRE-03-2` | `RN-PRE-06` | `OK` |
+| `AC-PRE-03-3` | `RN-PRE-06` | `OK` |
+| `AC-PRE-03-4` | `RN-PRE-06` | `OK` |
+| `AC-PRE-03-5` | `RN-PRE-09` | `OK` |
+| `AC-PRE-03-6` | `RN-PRE-10` | `OK` |
+| `AC-PRE-03-7` | `RN-PRE-13` | `OK` |
+| `AC-PRE-03-8` | `RN-PRE-13` | `OK` |
+| `AC-PRE-03-9` | `RN-PRE-13` | `OK` |
+| `AC-PRE-04-1` | `RN-PRE-01` | `OK` |
+| `AC-PRE-04-2` | `RN-PRE-01` | `OK` |
+| `AC-PRE-04-3` | `Estándar` | `OK` |
+| `AC-PRE-04-4` | `RN-PRE-14` | `OK` |
+| `AC-PRE-04-5` | `RN-SOL-12`, `RN-PRE-01` | `OK` |
+| `AC-PRE-05-1` | `RN-PRE-15` | `OK` |
+| `AC-PRE-05-2` | `RN-PRE-15` | `OK` |
+| `AC-PRE-05-3` | `RN-PRE-15` | `OK` |
+| `AC-PRE-05-4` | `RN-PRE-15` | `OK` |
+| `AC-PRE-05-5` | `RN-PRE-16`, `RN-SOL-12` | `OK` |
+| `AC-PRE-06-1` | `RN-PRE-02`, `RN-MOV-01` | `OK` |
+| `AC-PRE-06-2` | `RN-MOV-02` | `OK` |
+| `AC-PRE-06-3` | `RN-CTX-02` | `OK` |
 
 | US | ACs | Regla de negocio | `Estándar` |
 |----|-----|------------------|------------|
@@ -1024,7 +1024,7 @@ Un criterio se marca `OK` o `GAP` **solo** cuando su test corre, nunca por lectu
 | `US-PRE-06` | 3 | 3 | 0 |
 | **Total** | **37** | **35** | **2** |
 
-Totales: **6 historias y 37 criterios**, **15 `OK` y 22 sin ejecutar** (US-PRE-03…06). **35** se apoyan en una regla de negocio y **2** en un invariante técnico (`Estándar`: `AC-PRE-02-5` y `AC-PRE-04-3`). De los 35, **34** salen de una regla `Confirmada` y **1** —`AC-PRE-02-9`— de la **decisión técnica delegada** `RN-PRE-12`; ninguno es `Derivada` ni `OPEN`. Las citas de regla suman **43** sobre los 35 criterios que se apoyan en al menos una, porque `AC-PRE-01-1`, `AC-PRE-01-2`, `AC-PRE-02-2`, `AC-PRE-04-5`, `AC-PRE-05-5` y `AC-PRE-06-1` citan dos reglas cada uno y `AC-PRE-02-10` cita tres.
+Totales: **6 historias y 37 criterios**, **37 `OK`**; no quedan criterios sin ejecutar. **35** se apoyan en una regla de negocio y **2** en un invariante técnico (`Estándar`: `AC-PRE-02-5` y `AC-PRE-04-3`). De los 35, **34** salen de una regla `Confirmada` y **1** —`AC-PRE-02-9`— de la **decisión técnica delegada** `RN-PRE-12`; ninguno es `Derivada` ni `OPEN`. Las citas de regla suman **43** sobre los 35 criterios que se apoyan en al menos una, porque `AC-PRE-01-1`, `AC-PRE-01-2`, `AC-PRE-02-2`, `AC-PRE-04-5`, `AC-PRE-05-5` y `AC-PRE-06-1` citan dos reglas cada uno y `AC-PRE-02-10` cita tres.
 
 Dos deudas observadas, que este documento no corrige: el módulo de préstamos **no tiene hoy ningún test automatizado** —no existe `loan.test.js` ni otro archivo que cubra la devolución—, y el cierre vigente de una solicitud con devolución parcial vuelve a escribir la fecha y la condición de las unidades ya devueltas y registra un segundo movimiento de devolución por unidad, que es exactamente lo que prohíben `RN-PRE-14` y `AC-PRE-04-4`.
 
